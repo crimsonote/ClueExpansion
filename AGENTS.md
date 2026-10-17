@@ -66,22 +66,33 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 
 ## 4. 铁律（违反会静默失效或弄炸别人）
 
-1. **不许污染原版字段。** 详细活动只能走 `PropositionInfo` 的 protobuf **未知字段（字段号 4）**
-   —— 0.1.18 已弃用该号且未复用；任何改写 `RoomId`/`PlayerId`/`Time` 的方案都会让
-   **未装插件的客户端**显示错乱，绝对禁止。
-2. **未装插件的一端必须不炸。** 目前跨端数据一律走 protobuf 未知字段（不改协议、不新增 opcode）。
-   ⚠️ **自定义 opcode：标准 API 发不出去，但可以绕过**（2026-10-18 更正，早前写成"完全不可行"是**错的**）：
-   - 受限的只有 `IPacketSink.Send(IMessage)` —— 它用 `Enum.TryParse(PacketID, Descriptor.Name)`
-     反解 opcode（客户端 `SteamP2PSession` :163396、服务端 `ServerSession` :162553），
-     自定义消息名不在枚举里只是打条 LogError 后 `return`；
-   - **裸字节通道是 public 的**：客户端 `SteamP2PSession.SendBytes(byte[])`（:163423）、
+1. **不许污染原版字段。** 详细活动只能走 `PropositionInfo` 的 protobuf **未知字段（字段号 100）**；
+   任何改写 `RoomId`/`PlayerId`/`Time` 的方案都会让**未装插件的客户端**显示错乱，绝对禁止。
+   （原版对未知字段是"原样保留并忽略"—— 这正是这条通道成立的依据，见 §4.2。）
+2. **未装插件的一端必须不炸。** 跨端数据分**两条通道**，按数据性质选，不是二选一（2026-10-18 定案）：
+   - **线索的「详细活动」→ protobuf 未知字段**（`Core/UnknownFields.cs`，字段号 **100**）。
+     它是**线索的一个属性**，附着在 `PropositionInfo` 上天然一一对应：零关联键、无时序要求、
+     不会出现"同房间同时刻两条线索撞键"。
+     ⚠️ **写入必须早于 `Clone()`** —— `Device.Scan` 改的是 `ClueList` 里的对象引用
+     （随后 `AddRange` 进包），而 `RecordLastUsingPlayer` 是"先 `Clone()` 再 `Broadcast`"，
+     所以那条路只能在 `GameRoom.Broadcast` 的 Prefix 里、对着包内的 `Info` 补。
+     ⚠️ 字段号**刻意不用 4 和 6**：4 是官方刚弃用的号（可能回收），6 紧邻 `Destroyed=5`
+     （"下一个新字段"最可能挑的）。100 落在明显没人用的租用区。
+     代价：反射 `Google.Protobuf` 私有成员（`_unknownFields`/`fields`/`GetOrAddField`/`varintList`），
+     换版本可能断 —— 启动自检会**真的写一次读一次**来验，断了会在日志里明说而不是静默失效。
+   - **握手与开关状态 → 自定义 opcode**（`Core/Net/`，段 `61000` 起）。
+     它们**没有宿主对象可附着**，用自定义协议才能自己选时机（进房即声明、改设置即广播）。
+   ⚠️ **自定义 opcode 是可行的**（早前写成"完全不可行"是错的，同日更正）：受限的只有
+     `IPacketSink.Send(IMessage)` —— 它用 `Enum.TryParse(PacketID, Descriptor.Name)` 反解 opcode
+     （:163396 / :162553），自定义消息名不在枚举里只会打条 LogError 后 return。
+     但裸字节通道是 public 的：客户端 `SteamP2PSession.SendBytes(byte[])`（:163423）、
      服务端 `Session.Send(ArraySegment<byte>)`（:162286，`ServerSession : PacketSession : Session`）；
-   - 接收端 `PacketManager.RegisterMake<T>` / `RegisterHandler` 也是 public（:44876 / :44881）。
-   ⇒ 完整可行路径：Prefix 拦 `Send(IMessage)` → 命中自家消息则手工组包
-   （`int32 总长 | uint16 opcode | body`，见 :163403-163406）→ 走 `SendBytes` / `Send(ArraySegment<byte>)`
-   → `return false`。未装本模块的一端 `_makeFunc` 查不到该 opcode，会**静默丢弃**（:44894），不炸。
-   **当前取舍**：能力上报与开关同步仍用未知字段（零协议改动、已工作）；等真要传成规模的双向数据
-   时再切自定义 opcode，那时需要一个固定分配的 opcode（原版现用 1000–1200）。
+     接收端 `PacketManager.RegisterMake<T>` / `RegisterHandler` 也是 public（:44876 / :44881）。
+     包格式逐字节复刻原版：`int32 总长 | uint16 opcode | body`（:163403-163406）。
+   - **不让原版坏的四条保证**：① 只拦 `packet is CdMessage`，原版消息一律走原路径、一个字节不改；
+     ② opcode 取高位段；③ **注册前查 `_makeFunc` 占用，撞车就放弃注册并报错、绝不覆盖**
+     （`RegisterMake` 是覆盖语义，覆盖掉原版注册等于直接弄坏那条包）；
+     ④ 未装端 `_makeFunc` 查不到会静默丢弃（:44894），不报错、不踢人。
 3. **同名类型必须显式限定**：本程序集有 `ClueDetail.Features.Client` / `...Host`，
    而游戏里 `Server.Game.*` / `Data.*` 到处重名。用别名：
    `using ServerDevice = Server.Game.Device;`、`using GamePlayer = Server.Game.Player;`。
@@ -115,7 +126,7 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 | `Util.GetRoleWhatKey(int)` | 27517 | 0.1.18 的降级实现（只认角色 id） |
 | `ClueManager.TakeDeviceClue(S_SCAN_DEVICE)` | 27588 | 客户端收扫描结果（Postfix 关联设备） |
 | `DeviceBase.Scan()`（private） | 4952 | 客户端发起扫描（Prefix 记设备） |
-| `Protocol.PropositionInfo`（字段 1/2/3/5） | 157635 | 未知字段载体 |
+| `Protocol.PropositionInfo`（原版字段 1/2/3/5） | 157635 | 未知字段载体；本模块用字段 **100** 放详细活动 |
 | `Data.DeviceData.WhatType` | 182965 | 活动的权威来源 |
 | `Managers.Data.TextDic`（public Dictionary） | 34272 | 词条注入 |
 | `Managers.GetText(string)` | 43295 | 命中不到会返回 key 本身并报错 |
@@ -125,6 +136,9 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 | `Server.Game.Player.IsSpectator` | 29694 | 可写属性（放行时临时置 false） |
 | `Managers.Update` | —— | 补扫调度（每帧一次状态检查） |
 | `Managers.Device.Cache` | —— | 客户端已加载设备（`Info.Bubble == -1` = 可调查） |
+| `DummyClient.SteamP2PSession.Send` / `.SendBytes` | 163379 / 163423 | 自定义协议改道 + 裸字节出口（public） |
+| `DummyClient.ServerSession.Send` | 162551 | 同上（另一条出站路径） |
+| `PacketManager.RegisterMake` / `RegisterHandler` | 44876 / 44881 | 注册自定义 opcode（public） |
 
 `Core/LocalizationData.cs` 是**生成文件**（46 条词条 × 5 语言），
 来源 `.tmps/gamedata/TextData.json`（0.1.16b 基线），不要手改。
@@ -133,14 +147,15 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 
 按依赖顺序：
 
-1. ~~客户端能力握手~~ **已做（状态通道）**：房主侧把开关写进 `PropositionInfo` 未知字段（号 6，
-   0 也写），客户端读取后跟随；房主没装时无标记 → 客户端自采集兜底。见 `Core/RoomState.cs`。
-   **客户端能力上报也已做**（`Features/Both/Handshake/`）：客户端在 `HostPeerSession.Send`
-   给白名单包（`C_ENTER_GAME` / `C_READY` / `C_SCAN_DEVICE` / `C_SUBMIT_PROPOSITION`）
-   附能力版本，服务端在 `PacketQueue.Push`（统一收包点）读回登记。
-   多处冗余是刻意的 —— `C_ENTER_GAME` 到达时 `HostPeerSession.Player` 往往还没绑定。
-2. ~~房主开关 + 同步~~ **已做**：`[ClueRecordDetail] BroadcastDetail`，值写进未知字段号 6，
-   客户端在 `RoomState` 里跟随（房主关闭 ⇒ 客户端连自采集一起停）。
+1. ~~客户端能力握手~~ **已做**：分两条 ——
+   ① **能力声明**：`Features/Both/CdProtocol/` 在客户端第一次发包时发一条 `CdHello`（自定义 opcode），
+   服务端收到即登记（`Core/ClientCapability.cs`）；
+   ② **房主开关同步**：服务端经 `CdState` 下发，客户端在 `RoomState` 里跟随。
+   两者都走自定义协议而不是"寄生在原版包的未知字段上"—— 时机自由，
+   不必再为了赶 `Player` 绑定的窗口而冗余到四五个原版包上。
+2. ~~房主开关 + 同步~~ **已做**：`[ClueRecordDetail] BroadcastDetail`，值经 `CdState` 下发
+   （改设置立刻广播，不必等下一次线索包），客户端在 `RoomState` 里跟随
+   （房主关闭 ⇒ 客户端连自采集一起停）。
 3. ~~大厅设置页单选框~~ **已做（待实机）**：`Features/UI/LobbyToggle/` 克隆原版开关行挂进
    「详细设置」的「其它」页；仅房主可改；只有装了本模块的玩家能看到这一行。
    ⚠️ 0.1.18 动过 `common_prefab`，若日志出现「找不到设置页内容容器 ETCPresetContent」，
