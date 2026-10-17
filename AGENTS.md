@@ -196,9 +196,18 @@ csproj **不引用**它的程序集，拿不到就只记一行提示。
 | 集成点 | 2.0 状态 |
 | --- | --- |
 | 配置入口 `DT_Tools.Core.Engine.Config` | ✅ 仍在（public static 属性） |
-| 命令桥 `WebConsole.ExecuteCommandText(string)` | ⚠️ **已降为 `private static`**（类名与签名都没变）⇒ 命令桥仍可行，挂载改用字符串名 |
+| 命令桥-执行 `WebConsole.ExecuteCommandText(string)` | ⚠️ **已降为 `private static`**（类名与签名都没变）⇒ 仍可行，挂载改用字符串名（HideAndSeek 就是这么做的） |
+| 命令桥-列表 `CommandsApi._cachedJson` | ✅ **仍在**，类移到了 `DT_Tools.WebConsole.Api.CommandsApi` |
 | `SectionCategories` | ❌ 已删除；替代品是 `SectionGroups`（段名→组）+ `SectionTags` + `SectionSides` |
 
-所以：**没有做分类登记**（旧字段已删，替代品尚未复核）；
-**命令桥暂不做** —— 挂点其实是有的（只降了可见性），但本模块目前没有命令域，
-且上游"命令列表缓存"那侧的做法在 2.0 变了、需先重查。
+所以：**没有做分类登记**（旧字段已删，替代品 `SectionGroups` 尚未复核）；
+**命令桥暂不做** —— 注意**不是**因为上游不可用（执行口与列表缓存都还在，见上表），
+纯粹是本模块目前没有命令域。将来要加的话，只差两步：
+`AccessTools.Method(type, "ExecuteCommandText", …)` 做执行口 + 反射填 `CommandsApi._cachedJson` 做列表。
+
+⚠️ **核对这类"上游接口变没变"时**（2026-10-18 我连错两次，记下来）：
+① 查类型**别用全名精确匹配** —— 2.0 把 API 层整体挪进了 `DT_Tools.WebConsole.Api.*`，
+精确查会得到"不存在"的假阴性，要用**后缀匹配**；
+② 查成员**别过滤可见性** —— `Where-Object { $_.IsPublic }` 会把降级成 `private` 的成员藏起来；
+③ **终极依据是调用方代码里的字符串常量**（HideAndSeek 的 `ConsoleBridge.cs` 顶部那 7 个
+`Dt*TypeName`），DLL 扫描说"不在"时先核对常量写的是什么。详见 HideAndSeek/AGENTS.md §6 末节。
