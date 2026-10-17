@@ -20,6 +20,9 @@ namespace ClueDetail.Features.Client.LieWhat
 
         private static readonly List<EWhatType> Options = new List<EWhatType>();
 
+        /// <summary>下拉是否已经建出来了（自检用）。</summary>
+        public static bool IsBuilt => _dropdown != null;
+
         private static UI_GameTablet _tablet;
         private static TMP_Dropdown _dropdown;
         private static bool _failedLogged;

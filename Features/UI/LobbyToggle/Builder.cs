@@ -28,6 +28,9 @@ namespace ClueDetail.Features.UI.LobbyToggle
 
         private const string RowName = "ClueDetailBroadcastRow";
 
+        /// <summary>这一行是否已经建出来了（自检用）。</summary>
+        public static bool IsBuilt => _toggle != null;
+
         private static Toggle _toggle;
         private static CanvasGroup _group;
         private static bool _failedLogged;
