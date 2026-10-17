@@ -1,0 +1,10 @@
+# 与 HideAndSeek 同口径：仓库内存 LF，检出为 CRLF
+* text=auto
+*.cs text
+*.ps1 text
+*.md text
+*.json text
+*.csproj text
+*.dll binary
+*.png binary
+*.jpg binary
