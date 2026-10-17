@@ -69,11 +69,19 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 1. **不许污染原版字段。** 详细活动只能走 `PropositionInfo` 的 protobuf **未知字段（字段号 4）**
    —— 0.1.18 已弃用该号且未复用；任何改写 `RoomId`/`PlayerId`/`Time` 的方案都会让
    **未装插件的客户端**显示错乱，绝对禁止。
-2. **未装插件的客户端必须保持原版行为。** 只用 protobuf 未知字段，不改原版包结构。
-   ⚠️ **自定义 opcode 走不通（已实测证伪）**：`ServerSession.Send` 用
-   `Enum.Parse(PacketID, packet.Descriptor.Name)` 反解 opcode（0.1.18 :162551），
-   自定义消息的名字不在 `PacketID` 枚举里会直接抛异常；`PacketManager.RegisterMake`
-   只能注册**接收**。所以跨端数据一律走 `PropositionInfo` 未知字段。
+2. **未装插件的一端必须不炸。** 目前跨端数据一律走 protobuf 未知字段（不改协议、不新增 opcode）。
+   ⚠️ **自定义 opcode：标准 API 发不出去，但可以绕过**（2026-10-18 更正，早前写成"完全不可行"是**错的**）：
+   - 受限的只有 `IPacketSink.Send(IMessage)` —— 它用 `Enum.TryParse(PacketID, Descriptor.Name)`
+     反解 opcode（客户端 `SteamP2PSession` :163396、服务端 `ServerSession` :162553），
+     自定义消息名不在枚举里只是打条 LogError 后 `return`；
+   - **裸字节通道是 public 的**：客户端 `SteamP2PSession.SendBytes(byte[])`（:163423）、
+     服务端 `Session.Send(ArraySegment<byte>)`（:162286，`ServerSession : PacketSession : Session`）；
+   - 接收端 `PacketManager.RegisterMake<T>` / `RegisterHandler` 也是 public（:44876 / :44881）。
+   ⇒ 完整可行路径：Prefix 拦 `Send(IMessage)` → 命中自家消息则手工组包
+   （`int32 总长 | uint16 opcode | body`，见 :163403-163406）→ 走 `SendBytes` / `Send(ArraySegment<byte>)`
+   → `return false`。未装本模块的一端 `_makeFunc` 查不到该 opcode，会**静默丢弃**（:44894），不炸。
+   **当前取舍**：能力上报与开关同步仍用未知字段（零协议改动、已工作）；等真要传成规模的双向数据
+   时再切自定义 opcode，那时需要一个固定分配的 opcode（原版现用 1000–1200）。
 3. **同名类型必须显式限定**：本程序集有 `ClueDetail.Features.Client` / `...Host`，
    而游戏里 `Server.Game.*` / `Data.*` 到处重名。用别名：
    `using ServerDevice = Server.Game.Device;`、`using GamePlayer = Server.Game.Player;`。
@@ -127,8 +135,10 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 
 1. ~~客户端能力握手~~ **已做（状态通道）**：房主侧把开关写进 `PropositionInfo` 未知字段（号 6，
    0 也写），客户端读取后跟随；房主没装时无标记 → 客户端自采集兜底。见 `Core/RoomState.cs`。
-   剩下的**客户端能力上报**（服务端想知道谁装了）需要挂 internal 的 `HostPacketHandler`，
-   用 `AccessTools.TypeByName` + `[HarmonyTargetMethod]`；目前不阻塞任何玩法。
+   **客户端能力上报也已做**（`Features/Both/Handshake/`）：客户端在 `HostPeerSession.Send`
+   给白名单包（`C_ENTER_GAME` / `C_READY` / `C_SCAN_DEVICE` / `C_SUBMIT_PROPOSITION`）
+   附能力版本，服务端在 `PacketQueue.Push`（统一收包点）读回登记。
+   多处冗余是刻意的 —— `C_ENTER_GAME` 到达时 `HostPeerSession.Player` 往往还没绑定。
 2. ~~房主开关 + 同步~~ **已做**：`[ClueRecordDetail] BroadcastDetail`，值写进未知字段号 6，
    客户端在 `RoomState` 里跟随（房主关闭 ⇒ 客户端连自采集一起停）。
 3. ~~大厅设置页单选框~~ **已做（待实机）**：`Features/UI/LobbyToggle/` 克隆原版开关行挂进
