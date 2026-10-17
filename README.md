@@ -1,4 +1,4 @@
-# ClueDetail · 线索详情
+﻿# ClueDetail · 线索详情
 
 《Deadly Trick》的独立 BepInEx 5 插件。
 
@@ -63,13 +63,31 @@ pwsh -File deploy.ps1          # 复制到游戏（游戏需先退出）
 
 ## 5. 现状
 
-已完成（骨架 + 核心链路）：
+全部功能已实现，**尚未进游戏验证**：
 
-- 补丁框架（`[PatchFeature]` + 段开关自动绑定）
-- `PropositionInfo` 未知字段读写（反射链，已核对 0.1.18 的成员名）
-- 旧版 46 条 `W*` 词条注入（5 语言，从 0.1.16b 基线生成，见 `Core/LocalizationData.cs`）
-- 房主侧：`RecordLastUsingPlayer` 记录 → `Scan` / `Broadcast` 补发
-- 客户端侧：`Util.FormatProposition` 拼回 `{what}`；扫描时自采集设备关联
+| 功能 | 位置 |
+| --- | --- |
+| 补丁框架（`[PatchFeature]` + 段开关自动绑定） | `Core/FeatureLoader.cs` |
+| `PropositionInfo` 未知字段读写（反射链，已核对 0.1.18 成员名） | `Core/UnknownFields.cs` |
+| 房主侧记录 + 下发（`Scan` / `Broadcast` 补字段 4、6） | `Features/Host/RecordDetail/` |
+| 客户端拼回 `{what}` + 46 条词条注入（5 语言） | `Features/Client/ClueRender/` |
+| 按房间推断活动（房主未装时的主力；歧义 → 「操作了设备」） | `Core/RoomDeviceScan.cs` |
+| 死者 / 旁观者自动全线索（逐帧补扫 + 房主放行旁观者） | `Features/Client/FullClue/`、`Features/Host/SpectatorScan/` |
+| 大厅「详细设置」开关 | `Features/UI/LobbyToggle/` |
+| 伪证「详细活动」下拉 | `Features/Client/LieWhat/` |
+
+## 5.1 验收步骤（需要实机）
+
+1. 房主 + 至少一个客户端都装本插件 → 进对局 → 黑方操作一台设备（如终端机）→
+   进入调查阶段扫描那台设备 → 线索应显示成 `…位于教室使用了终端机。`
+2. 只有客户端装、房主不装 → 同样流程 → 线索应显示 `…位于教室使用了终端机。`
+   （走客户端按房间推断）；若该房间有多种活动 → 显示 `…操作了设备。`
+3. 房主在大厅「详细设置 → 其它」关掉「线索详细活动」→ 客户端那一行也应消失（跟随关闭）。
+4. 非房主打开同一页面 → 那一行半透明、点不动。
+5. 伪证页：点地图选一个房间 → 旁边应出现「详细活动」下拉，选一项后提交 → 审判时其他人
+   看到的命题应带该活动。
+6. **回归**：找一个没装插件的客户端进同一房间 → 它的线索显示必须与 0.1.18 原版完全一致
+   （即 `…位于教室。`），且日志无异常。
 
 计划中（见 `AGENTS.md` 的待办）：客户端能力握手、房主开关与大厅设置页单选框、
 旧版伪证「详细活动」下拉的还原、死者/旁观者自动全线索与补扫设备。

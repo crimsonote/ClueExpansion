@@ -135,9 +135,10 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
    「详细设置」的「其它」页；仅房主可改；只有装了本模块的玩家能看到这一行。
    ⚠️ 0.1.18 动过 `common_prefab`，若日志出现「找不到设置页内容容器 ETCPresetContent」，
    说明 prefab 层级又变了，按 HideAndSeek 的 `Features/UI/EXTENDING.md` §6 重新对名字。
-4. **伪证 UI 还原**：0.1.18 的 `UI_GameTablet` 只剩 who/hour/minute 三个下拉
-   （反编译 :51623-51631），旧版还有 `what` 下拉（0.1.17a 的 `RefreshWhat` /
-   `OnWhatDropdownValueChanged` / `HasLieWhatOptions`）—— 需要按旧版重建一个 `TMP_Dropdown`。
+4. ~~伪证 UI 还原~~ **已做（待实机）**：`Features/Client/LieWhat/` 克隆界面上已有的下拉作为
+   控件，选项用 `RoomDeviceScan`（旧版是已删除的 `ClueManager.RoomObjectDict`），
+   选中后写进 `LieClue.Clue.Info` 的未知字段。提交链路不用改：服务端 `SubmitProposition`
+   原样保存并广播 `Info`（0.1.18 :182232-182246），未知字段自动传遍全房。
 5. ~~死者 / 旁观者全线索~~ **已做（待实机）**：`Features/Client/FullClue` 在调查阶段对本机
    `Bubble == -1` 的设备逐个补发扫描（每帧一个）；`Features/Host/SpectatorScan` 为旁观者
    放行服务端的 `IsSpectator` 守卫。房主没装时旁观者的请求没有响应，靠

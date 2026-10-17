@@ -75,6 +75,48 @@ namespace ClueDetail.Core
         }
 
         /// <summary>
+        /// 覆盖写详细活动（先清掉旧值）。
+        /// </summary>
+        /// <remarks>
+        /// <see cref="SetWhat"/> 是幂等的（防重复追加），但伪证界面里玩家会反复改选，
+        /// 那种场景需要真正覆盖，所以额外提供这一条。
+        /// </remarks>
+        public static bool ReplaceWhat(PropositionInfo info, int what)
+        {
+            if (info == null || what == 0)
+            {
+                return false;
+            }
+
+            ClearValue(info, WhatFieldNumber);
+            return SetValue(info, WhatFieldNumber, what);
+        }
+
+        /// <summary>清掉某个未知字段（下一次 SetValue 就会重新写）。</summary>
+        public static bool ClearValue(PropositionInfo info, int fieldNumber)
+        {
+            if (info == null || !Available)
+            {
+                return false;
+            }
+
+            try
+            {
+                object set = SetField.GetValue(info);
+                if (set != null && FieldsField.GetValue(set) is IDictionary fields)
+                {
+                    fields.Remove(fieldNumber);
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Exception(ex, "清理线索未知字段失败（字段号 " + fieldNumber + "）");
+            }
+
+            return false;
+        }
+        /// <summary>
         /// 写房主侧状态。**0 也要写** —— 它表示"房主装了但关闭"，必须与"没装"（无标记）区分开。
         /// </summary>
         public static bool SetFlag(PropositionInfo info, bool enabled)
