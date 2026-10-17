@@ -10,7 +10,9 @@ namespace ClueDetail.Core
     /// 三级来源，可靠性递减：
     /// <list type="number">
     /// <item><b>服务端精确下发</b> —— 房主装了本模块时走这条（<see cref="UnknownFields"/>，字段号 100）。</item>
-    /// <item><b>扫描建立的设备关联</b> —— 本机扫过那台设备，能把线索精确对到设备上。</item>
+    /// <item><b>设备关联</b> —— 两条路都精确到设备：① <c>S_ADD_CLUE</c> 自带 <c>DeviceId</c>
+    /// （经 <c>Server.Game.ClueMirror.Add</c> 记下）；② <c>S_SCAN_DEVICE</c> 不带设备号，
+    /// 但那是本机刚发起的扫描，靠请求/响应配对得到。</item>
     /// <item><b>按房间推断</b> —— 房主没装时的主力：用线索的房间去设备表里找该房间有什么活动。
     /// 去重后只剩一种 → 确定；两种以上 → <c>ambiguous</c>，调用方退化为通用文案。</item>
     /// </list>

@@ -178,10 +178,17 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
    `Bubble == -1` 的设备逐个补发扫描（每帧一个）；`Features/Host/SpectatorScan` 为旁观者
    放行服务端的 `IsSpectator` 守卫。房主没装时旁观者的请求没有响应，靠
    `ActivityMap.MatchesPendingRoom` 的房间校验挡住队列错位。
-6. ~~自采集增强~~ **已做（换了更稳的手段）**：不再靠"记录自己操作过哪台设备"——
-   客户端时钟与服务端线索时间对不齐，而且同一线索可能对应多台设备。改为
-   `Core/RoomDeviceScan` 按线索房间从设备表反推：去重后唯一 ⇒ 精确；
-   多种 ⇒ 歧义，退化为通用文案「操作了设备」（`Localization.GenericActivityKey`）。
+6. ~~自采集增强~~ **已做（2026-10-18 修正主路径）**——三级，可靠性递减：
+   - **主路径 · 广播自带设备号**：`S_ADD_CLUE` 的字段是 `DeviceId = 1` + `Info = 2`（:145153），
+     客户端收到后进 `Server.Game.ClueMirror.Add(deviceId, info)`（:43626 / :180795）——
+     在它的 Prefix 里记下 `(playerId,time,roomId) → deviceId`，渲染时直接查设备表的
+     `WhatType`。**精确，且覆盖所有实时广播的线索**（不论谁触发、自己有没有扫过）。
+     ⚠️ 早前只在扫描那条路上做关联，把包里现成的设备号浪费了，才退到"按房间猜"。
+   - **次路径 · 扫描配对**：`S_SCAN_DEVICE` 只带 `InfoList`、**没有**设备号（:127846），
+     但那是本机刚发起的扫描，用 `ActivityMap` 的队列 + 房间号校验配对。
+   - **兜底 · 按房间推断**：`Core/RoomDeviceScan` 从线索房间反推设备表里有哪些活动。
+     去重后唯一才敢用，多种就退化为通用文案「操作了设备」（`Localization.GenericActivityKey`）。
+     只有在上面两条都没命中时才会走到这里。
 
 ## 7. 过程材料
 

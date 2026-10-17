@@ -1,6 +1,7 @@
 ﻿using ClueDetail.Core;
 using HarmonyLib;
 using Protocol;
+using GameClueMirror = Server.Game.ClueMirror;
 
 namespace ClueDetail.Features.Client.ClueRender
 {
@@ -32,6 +33,35 @@ namespace ClueDetail.Features.Client.ClueRender
             }
         }
 
+        /// <summary>
+        /// 实时广播的线索（<c>S_ADD_CLUE</c>）**自带设备号**，直接接上 —— 这是最精确的一条路径。
+        /// </summary>
+        /// <remarks>
+        /// <c>S_ADD_CLUE</c> 的字段是 <c>DeviceId = 1</c> + <c>Info = 2</c>（0.1.18 :145153），
+        /// 客户端收到后进 <c>ClueMirror.Add(deviceId, info)</c>（:43626），而 <c>ClueMirror</c>
+        /// 本身就是「设备 → 线索列表」的映射（:180791），连 <c>DeviceBase</c> 渲染线索都从它取
+        /// （:5035 <c>ClueMirror.Get(ID)</c>）。
+        /// <para>
+        /// 所以"这条线索属于哪台设备"**客户端本来就知道** —— 只要在这里把
+        /// <c>(playerId, time, roomId) → deviceId</c> 记一份，渲染时就能直接查到设备的
+        /// <c>WhatType</c>，不需要去猜"房间里有什么设备"。
+        /// </para>
+        /// <para>
+        /// 与扫描那条路的分工：<c>S_SCAN_DEVICE</c> 只带 <c>InfoList</c>、**没有**设备号（:127846），
+        /// 只能靠"是我刚发的扫描请求"配对；而广播这条路是服务端明说的设备号，优先用它。
+        /// </para>
+        /// </remarks>
+        [HarmonyPatch(typeof(GameClueMirror), nameof(GameClueMirror.Add))]
+        internal static class ClueMirrorHook
+        {
+            private static void Prefix(int deviceId, PropositionInfo info)
+            {
+                if (info != null)
+                {
+                    ActivityMap.Remember(info.PlayerId, info.Time, info.RoomId, deviceId);
+                }
+            }
+        }
         /// <summary>
         /// 本机发起扫描时把设备号压进待响应队列。
         /// </summary>
