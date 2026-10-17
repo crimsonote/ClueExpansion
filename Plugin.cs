@@ -4,6 +4,7 @@ using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using ClueDetail.Core;
+using ClueDetail.Core.Dt;
 using HarmonyLib;
 
 namespace ClueDetail
@@ -44,6 +45,11 @@ namespace ClueDetail
 
             Cfg.Save();
             Cfg.SaveOnConfigSet = true;
+
+            // 与 DT_Tools 的可选集成：把上面这批条目镜像进它的 CONFIG 页。
+            // 必须在**全部 Bind 之后**调用，否则会镜像进一批残缺条目。
+            // 权威来源始终是 ClueDetail.cfg；没装 DT_Tools 时这里只记一行提示。
+            DtBridge.TryMirror(Cfg, Logger);
 
             Log.LogInfo(
                 $"[ClueDetail] {Version} 加载完成：启用 {result.Enabled}，跳过 {result.Skipped}，失败 {result.Failed}。" +

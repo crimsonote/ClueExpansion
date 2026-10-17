@@ -177,3 +177,27 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 
 调查记录、一次性脚本、被证伪的方案放 `D:\git\DT_Tools\.tmps\`（**不进任何仓库**）；
 耐久结论写进本文件或 `README.md`。
+
+## 8. 与 DT_Tools 的集成（可选依赖）
+
+**不装 DT_Tools 也能跑**：集成全程走反射（`AccessTools.TypeByName("DT_Tools.Core.Engine")`），
+csproj **不引用**它的程序集，拿不到就只记一行提示。
+
+**已做 · 配置镜像**（`Core/Dt/DtBridge.cs` + `Core/Dt/ConfigEntries.cs`）：
+把本模块的条目注入 DT 的 `ConfigFile`，使设置出现在 DT 的 CONFIG 页。
+机制是反射 BepInEx 的 `<Entries>k__BackingField` 拿到条目字典，再把**同一批 `ConfigEntry` 对象**
+塞进去 —— 值只有一份，两边读写的是同一个值，不需要任何同步代码。
+- ⚠️ 代价：DT_Tools 的 `Save()` 会把这些条目一并写进**它自己的** cfg（镜像的固有代价，与 HideAndSeek 相同）。
+- ⚠️ 逐键查重：撞名就跳过并告警。覆盖上游条目远比"少显示几项"严重。
+- ⚠️ 必须在**全部 Bind 之后**调用，否则会镜像进一批残缺条目。
+
+**实测口径：游戏里的 DT_Tools 是 `2.0.0.4`**（2026-10-18 核对 —— 与 HideAndSeek 文档里记的 1.0.9.x 不同）：
+
+| 集成点 | 2.0 状态 |
+| --- | --- |
+| 配置入口 `DT_Tools.Core.Engine.Config` | ✅ 仍在（public static 属性） |
+| 命令桥 `WebConsole.ExecuteCommandText(string)` | ❌ **已不存在**（2.0 的 `WebConsole` 只剩 `Post`/`RunOnMain`/`Init`） |
+| `SectionCategories` / `category` 字段 | ❌ **已删除**，配置页改由标签体系归组 |
+
+所以：**没有做分类登记**（2.0 没有对应物）；
+**命令桥待定** —— 本模块目前没有命令域，要做需先设计命令（`cd_*`）并另找 2.0 的执行入口。
