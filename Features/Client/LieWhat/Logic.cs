@@ -122,6 +122,8 @@ namespace ClueDetail.Features.Client.LieWhat
                 return;
             }
 
+            // 直接写进伪证线索的未知字段：提交时原版会 Clone.Info 发出去，
+            // 而 Clone 会一并复制未知字段，所以服务端与其它客户端都收得到。
             var info = _tablet?.LieClue?.Clue?.Info;
             if (info == null)
             {

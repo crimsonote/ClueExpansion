@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using ClueDetail.Core.Net;
 using ClueDetail.Features.Client.LieWhat;
 using ClueDetail.Features.UI.LobbyToggle;
 using Protocol;
@@ -42,6 +43,8 @@ namespace ClueDetail.Core
             Log.Info($"语言 {Localization.CurrentLanguage()}；TextDic {data.TextDic.Count} 条；" +
                      $"DeviceDic {data.DeviceDic.Count}；RoomDic {data.RoomDic.Count}");
 
+            Log.Info($"自定义协议：已注册 {CdWire.Registered}/{CdOpcode.Count} 条" +
+                     (CdWire.Failed > 0 ? $"（失败 {CdWire.Failed}，见上面的错误日志）" : ""));
             Log.Info("未知字段通道：" + ProbeUnknownFields());
             Log.Info($"本机是房主：{Yes(RoomState.IsHost)}；房主开关：{DescribeRoomState()}");
 
@@ -59,7 +62,15 @@ namespace ClueDetail.Core
             Log.Info("────────────────────────────────");
         }
 
-        /// <summary>端到端自证：真的往一条 PropositionInfo 写一个值，再读回来。</summary>
+
+        /// <summary>
+        /// 端到端自证：真的往一条 PropositionInfo 写一个值，再读回来。
+        /// </summary>
+        /// <remarks>
+        /// 这条反射链（<c>_unknownFields</c> → <c>fields</c> → <c>GetOrAddField</c> → <c>varintList</c>）
+        /// 全是 protobuf 的私有实现细节，换版本可能断。断了必须**看得见**：
+        /// 症状是"线索又没了最后一段"，而这行日志能直接把它和"补丁没挂上"区分开。
+        /// </remarks>
         private static string ProbeUnknownFields()
         {
             var probe = new PropositionInfo();
@@ -68,9 +79,8 @@ namespace ClueDetail.Core
 
             return ok
                 ? "通过（写入→读回一致）"
-                : "失败 —— 通道不可用，详细活动无法跨端传递（其余按房间推断的自采集仍可用）";
+                : "失败 —— 详细活动无法跨端传递（按房间推断的自采集仍然可用）";
         }
-
         private static string DescribeRoomState()
         {
             if (RoomState.IsHost)

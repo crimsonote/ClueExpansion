@@ -73,14 +73,6 @@ namespace ClueDetail.Features.Client.ClueRender
                     return;
                 }
 
-                foreach (PropositionInfo info in pkt.InfoList)
-                {
-                    if (info != null && UnknownFields.HasFlag(info))
-                    {
-                        RoomState.ApplyRemote(UnknownFields.GetFlag(info));
-                        break;
-                    }
-                }
 
                 if (pkt.InfoList.Count == 0)
                 {

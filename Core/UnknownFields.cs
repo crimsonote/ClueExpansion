@@ -8,98 +8,78 @@ using Protocol;
 namespace ClueDetail.Core
 {
     /// <summary>
-    /// 在任意 protobuf 消息的未知字段区读写本模块的旁路数据。
+    /// 在 <see cref="PropositionInfo"/> 的 protobuf 未知字段区读写「详细活动」。
     /// </summary>
     /// <remarks>
-    /// 背景：0.1.18 删除了 <c>PropositionInfo.WhatType</c>（原字段号 4）且**未复用**该号。
-    /// protobuf 的 wire 规则要求解析方原样保留未定义字段，所以：
+    /// <b>为什么这条通道用在这里</b>：<c>what</c> 本质上是**线索的一个属性**。
+    /// 让它和 <c>PlayerId/Time/RoomId</c> 躺在同一个对象里，就不需要关联键、
+    /// 不需要保证"详情包先到"的时序、也不会出现"同房间同时刻两条线索撞键"。
+    /// 而握手与开关状态是**独立事件**（没有宿主对象可附着），那些走自定义协议
+    /// （<see cref="Net.CdWire"/>）。
+    /// <para>
+    /// 机制：0.1.18 删除了 <c>PropositionInfo.WhatType</c>，protobuf 的 wire 规则要求
+    /// 解析方原样保留不认识的字段，所以：
+    /// </para>
     /// <list type="bullet">
-    /// <item>发送方把数据写进未知字段 → 序列化后随包下发；</item>
-    /// <item>0.1.18 原版客户端/服务端解析时把它丢进自己的 _unknownFields 并忽略 ——
-    /// **不会报错、不改变任何原版行为**；</item>
-    /// <item>装了本模块的一端用这里的方法读回。</item>
-    /// </list>
-    /// 这条通道不需要（也无法）新增 opcode：<c>ServerSession.Send</c> 用
-    /// <c>Enum.Parse(PacketID, packet.Descriptor.Name)</c> 反解 opcode，自定义消息发不出去。
-    /// <para>字段分配（都取自 0.1.18 未使用且未复用的号）：</para>
-    /// <list type="bullet">
-    /// <item><c>PropositionInfo</c> 4 — 详细活动 EWhatType</item>
-    /// <item><c>PropositionInfo</c> 6 — 房主侧状态：1 = 启用详情下发，0 = 房主装了但关闭</item>
-    /// <item><c>C_SCAN_DEVICE</c> 2 — 客户端能力上报（值 = 本模块的能力版本）</item>
+    /// <item>服务端把活动写进未知字段 → 随线索包一起序列化下发；</item>
+    /// <item>0.1.18 原版客户端/服务端解析时把它丢进自己的 <c>_unknownFields</c> 并忽略 ——
+    /// **不报错、不改变任何原版行为**；</item>
+    /// <item>装了本模块的客户端读回来。注意 <c>PropositionInfo.Clone()</c> 会一并复制未知字段，
+    /// 所以广播与扫描两条路径都带得上（写必须在 <c>Clone()</c> **之前**，见
+    /// <c>Features/Host/RecordDetail</c> 的三个钩子）。</item>
     /// </list>
     /// <para>
-    /// 实现约束：<c>Google.Protobuf.UnknownFieldSet</c> 是 public，但它返回的
-    /// <c>UnknownField</c> 是 internal，因此只能用反射链（GetOrAddField → AddVarint）。
-    /// 已用 0.1.18 的反射核对过成员名：_unknownFields / fields / GetOrAddField / AddVarint / varintList。
+    /// <b>实现约束</b>：<c>Google.Protobuf.UnknownFieldSet</c> 是 public，但它返回的
+    /// <c>UnknownField</c> 是 internal，因此只能走反射链
+    /// （<c>_unknownFields</c> → <c>fields</c> → <c>GetOrAddField</c> → <c>AddVarint</c>，
+    /// 读取时再取 <c>varintList</c>）。这些都是 protobuf 的私有实现细节，换版本可能断 ——
+    /// 所以启动自检会**真的写一次再读一次**来验证（<c>Core/Diagnostics.cs</c>），
+    /// 断了会在日志里明说，而不是静默失效。
     /// </para>
     /// </remarks>
     internal static class UnknownFields
     {
-        /// <summary>详细活动（EWhatType），载体是 PropositionInfo。</summary>
-        public const int WhatFieldNumber = 4;
-
-        /// <summary>房主侧状态开关，载体是 PropositionInfo。</summary>
-        public const int FlagFieldNumber = 6;
+        /// <summary>
+        /// 详细活动（EWhatType）的字段号，载体是 PropositionInfo。
+        /// </summary>
+        /// <remarks>
+        /// 刻意避开 4 和 6：4 是 0.1.18 刚弃用的号（官方随时可能回收给新字段），
+        /// 6 紧邻 <c>Destroyed=5</c>（"下一个新字段"最可能挑的号）。
+        /// 100 落在明显没人用的租用区。
+        /// </remarks>
+        public const int WhatFieldNumber = 100;
 
         private static readonly Dictionary<Type, FieldInfo> SetFieldCache = new Dictionary<Type, FieldInfo>();
         private static readonly Dictionary<Type, FieldInfo> FieldsFieldCache = new Dictionary<Type, FieldInfo>();
         private static readonly Dictionary<Type, MethodInfo> GetOrAddFieldCache = new Dictionary<Type, MethodInfo>();
 
-        // ── 便捷重载（线索相关，载体固定是 PropositionInfo）─────────────────
-
-        public static bool SetWhat(PropositionInfo info, int what)
+        public static bool SetWhat(IMessage message, int what)
         {
-            return what != 0 && SetValue(info, WhatFieldNumber, what);
+            return what != 0 && SetValue(message, WhatFieldNumber, what);
         }
 
-        public static int GetWhat(PropositionInfo info)
+        public static int GetWhat(IMessage message)
         {
-            return TryGetValue(info, WhatFieldNumber, out int value) ? value : 0;
+            return TryGetValue(message, WhatFieldNumber, out int value) ? value : 0;
         }
 
         /// <summary>
-        /// 覆盖写详细活动（先清掉旧值）。
+        /// 覆盖写（先清掉旧值）。
         /// </summary>
         /// <remarks>
-        /// <see cref="SetWhat"/> 是幂等的（防重复追加），但伪证界面里玩家会反复改选，
-        /// 那种场景需要真正覆盖，所以额外提供这一条。
+        /// <see cref="SetWhat"/> 是幂等的（未知字段的 varintList 是**追加**语义，重复写会变成两个值），
+        /// 但伪证界面里玩家会反复改选，那种场景需要真正覆盖，所以另外提供这一条。
         /// </remarks>
-        public static bool ReplaceWhat(PropositionInfo info, int what)
+        public static bool ReplaceWhat(IMessage message, int what)
         {
-            if (info == null || what == 0)
+            if (message == null || what == 0)
             {
                 return false;
             }
 
-            ClearValue(info, WhatFieldNumber);
-            return SetValue(info, WhatFieldNumber, what);
+            ClearValue(message, WhatFieldNumber);
+            return SetValue(message, WhatFieldNumber, what);
         }
-
-        /// <summary>
-        /// 写房主侧状态。**0 也要写** —— 它表示"房主装了但关闭"，必须与"没装"（无标记）区分开。
-        /// </summary>
-        public static bool SetFlag(PropositionInfo info, bool enabled)
-        {
-            if (HasValue(info, FlagFieldNumber))
-            {
-                return true;
-            }
-
-            return SetValue(info, FlagFieldNumber, enabled ? 1 : 0);
-        }
-
-        /// <summary>读房主侧状态；没有标记时返回 true（调用方应先用 <see cref="HasFlag"/> 区分）。</summary>
-        public static bool GetFlag(PropositionInfo info)
-        {
-            return !TryGetValue(info, FlagFieldNumber, out int value) || value != 0;
-        }
-
-        public static bool HasFlag(PropositionInfo info)
-        {
-            return HasValue(info, FlagFieldNumber);
-        }
-
-        // ── 泛型底层（任意 IMessage）────────────────────────────────────────
 
         public static bool SetValue(IMessage message, int fieldNumber, int value)
         {
@@ -174,7 +154,7 @@ namespace ClueDetail.Core
             return TryGetFieldObject(message, fieldNumber, out _);
         }
 
-        /// <summary>清掉某个未知字段（下一次 SetValue 就会重新写）。</summary>
+        /// <summary>清掉某个未知字段（下一次 SetValue 会重新写）。</summary>
         public static bool ClearValue(IMessage message, int fieldNumber)
         {
             if (message == null)

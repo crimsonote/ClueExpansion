@@ -51,8 +51,9 @@ $targets = @(
     @{ Type = "UI_LobbyPreset";               Method = "Refresh";                Args = 0; Note = "设置页同步" }
     @{ Type = "UI_GameTablet";                Method = "Init";                   Args = -1; Note = "伪证下拉建控件" }
     @{ Type = "UI_GameTablet";                Method = "OnClickSectorLieSection"; Args = 2; Note = "伪证下拉刷新" }
-    @{ Type = "Server.Game.HostPeerSession";  Method = "Send";                    Args = 1; Note = "能力上报标记（客户端出口）" }
-    @{ Type = "PacketQueue";                Method = "Push";                    Args = 1; Note = "统一收包点（服务端读取）" }
+    @{ Type = "Server.Game.HostPeerSession";  Method = "Send";                    Args = 1; Note = "能力声明时机（客户端出口）" }
+    @{ Type = "DummyClient.SteamP2PSession";  Method = "Send";                    Args = 1; Note = "自定义协议改道（P2P 出口）" }
+    @{ Type = "DummyClient.ServerSession";    Method = "Send";                    Args = 1; Note = "自定义协议改道（另一条出口）" }
 )
 
 # 被引用的成员（非补丁目标，但编译期引用；游戏升级后改名会直接编译失败，这里也顺手核一遍）
@@ -63,6 +64,7 @@ $members = @(
     @{ Type = "Data.DeviceData";              Member = "RoomType";     Kind = "F"; Note = "按房间推断" }
     @{ Type = "ClueManager";                  Member = "ClueList";     Kind = "F"; Note = "线索列表" }
     @{ Type = "UI_GameTablet";                Member = "LieClue";      Kind = "P"; Note = "伪证线索对象" }
+    @{ Type = "DummyClient.SteamP2PSession";  Member = "SendBytes";    Kind = "M"; Note = "裸字节出口（public）" }
 )
 
 $fail = 0
@@ -93,7 +95,7 @@ foreach ($t in $targets) {
     Write-Host ("  ok    {0}::{1}  {2}" -f $t.Type, $t.Method, $t.Note) -ForegroundColor Green
 }
 
-Write-Host "`n=== 引用成员 ===" -ForegroundColor Cyan
+Write-Host "`n=== 引用成员（UnknownFieldSet 在 Google.Protobuf.dll，由启动自检负责） ===" -ForegroundColor Cyan
 foreach ($m in $members) {
     if (-not $all.ContainsKey($m.Type)) {
         Write-Host ("  FAIL  {0}.{1} —— 类型不存在" -f $m.Type, $m.Member) -ForegroundColor Red

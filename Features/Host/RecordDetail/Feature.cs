@@ -1,5 +1,6 @@
 ﻿using BepInEx.Configuration;
 using ClueDetail.Core;
+using ClueDetail.Core.Net;
 
 namespace ClueDetail.Features.Host.RecordDetail
 {
@@ -8,20 +9,22 @@ namespace ClueDetail.Features.Host.RecordDetail
     /// </summary>
     /// <remarks>
     /// 0.1.18 删除了 <c>Protocol.PropositionInfo.WhatType</c>。本功能在服务端写入线索的瞬间
-    /// 把设备表里的 <c>Data.DeviceData.WhatType</c> 记进旁路表，并在**任何下发路径**上
-    /// 把它写回 protobuf 的未知字段区（字段号 4，0.1.18 已弃用且未复用）。
+    /// 把设备表里的 <c>Data.DeviceData.WhatType</c> 记进旁路表，并通过**本模块自己的协议**
+    /// （<c>CdClueDetail</c>）主动下发给全房。
     /// <para>
-    /// 对未安装本模块的客户端：未知字段会被 protobuf 原样保留并忽略，**行为与原版完全一致**，
-    /// 不新增 opcode、不污染 RoomId/PlayerId/Time 等原版字段。
+    /// 对未安装本模块的客户端：这些自定义 opcode 它不认识，
+    /// <c>PacketManager.OnRecvPacket</c> 查不到映射会静默丢弃（0.1.18 :44894），
+    /// **不报错、不改变任何原版行为**。
     /// </para>
     /// <para>
-    /// 同时每条线索都带上「房主侧状态」（字段号 6）：装了本模块的客户端据此区分
-    /// "房主没装本模块"（无标记 → 允许自采集兜底）与"房主装了但关闭"（标记 0 → 客户端跟随关闭）。
+    /// 同时把「房主侧开关」经 <c>CdState</c> 下发给装了本模块的客户端：
+    /// 客户端据此区分"房主没装本模块"（收不到状态 → 允许自采集兜底）
+    /// 与"房主装了但关闭"（收到 Enabled=0 → 客户端跟随关闭，连自采集一起停）。
     /// </para>
     /// </remarks>
     [PatchFeature(
         "ClueRecordDetail",
-        "房主侧：线索写入时记录详细活动（设备动作），并在下发时补进 protobuf 未知字段，供装了本模块的客户端还原旧版「…于{地点}{活动}」句式；同时下发本开关状态，让客户端跟随。未装本模块的客户端会忽略这些字段，行为与原版一致。",
+        "房主侧：线索写入时记录详细活动（设备动作），并经本模块自有协议下发给全房，供装了本模块的客户端还原旧版「…于{地点}{活动}」句式；同时下发本开关状态让客户端跟随。未装本模块的客户端会静默忽略这些包，行为与原版一致。",
         defaultEnabled: true,
         side: FeatureSide.Host)]
     internal static partial class RecordDetailFeature
@@ -40,7 +43,12 @@ namespace ClueDetail.Features.Host.RecordDetail
                 "这是「房主主动关闭」与「房主根本没装本模块」的区别所在。");
 
             RoomState.HostBroadcast = BroadcastDetail.Value;
-            BroadcastDetail.SettingChanged += (_, __) => RoomState.HostBroadcast = BroadcastDetail.Value;
+            BroadcastDetail.SettingChanged += (_, __) =>
+            {
+                RoomState.HostBroadcast = BroadcastDetail.Value;
+                // 自定义协议的好处：可以立刻通知，不必等下一次线索包。
+                CdWire.BroadcastState();
+            };
         }
     }
 }

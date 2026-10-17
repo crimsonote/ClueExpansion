@@ -61,6 +61,21 @@ namespace ClueDetail.Core
                     }
                 }
 
+                MethodInfo onLoaded = type.GetMethod("OnLoaded", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null);
+                if (onLoaded != null)
+                {
+                    try
+                    {
+                        onLoaded.Invoke(null, null);
+                    }
+                    catch (Exception ex)
+                    {
+                        failed++;
+                        log.LogError($"[ClueDetail] 功能 {type.Name} 的 OnLoaded 失败：{ex}");
+                        continue;
+                    }
+                }
+
                 if (!toggle.Value)
                 {
                     skipped++;
