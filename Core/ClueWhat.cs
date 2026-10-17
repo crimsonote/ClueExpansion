@@ -18,10 +18,21 @@ namespace ClueDetail.Core
                 return EWhatType.WNone;
             }
 
+            // 房主装了但关掉了本模块 → 连客户端自采集也一起停，否则等于把房主关掉的信息又补回来。
+            if (!RoomState.AllowDetail)
+            {
+                return EWhatType.WNone;
+            }
+
             int fromPacket = UnknownFields.GetWhat(clue.Info);
             if (fromPacket != 0)
             {
                 return (EWhatType)fromPacket;
+            }
+
+            if (!SelfCapture.On)
+            {
+                return EWhatType.WNone;
             }
 
             int deviceId = ActivityMap.DeviceOf(clue.Info.PlayerId, clue.Info.Time, clue.Info.RoomId);

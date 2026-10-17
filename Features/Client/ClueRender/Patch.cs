@@ -52,20 +52,37 @@ namespace ClueDetail.Features.Client.ClueRender
         }
 
         /// <summary>
-        /// 收到扫描结果时，把这一批线索登记到刚才那台设备上。
+        /// 收到扫描结果时：① 读取房主侧状态标记；② 把这一批线索登记到刚才那台设备上。
         /// </summary>
         /// <remarks>
         /// <c>S_SCAN_DEVICE</c> 只带 InfoList，协议里没有设备号 —— 所以"这次扫的是哪台设备"
         /// 只能由客户端自己在请求与响应之间搭桥。键与 <c>AlreadyExistClue</c> 的原版去重口径一致
         /// （PlayerId + RoomId + Time）。
+        /// <para>
+        /// 状态标记必须先读：房主装了但关闭时，登记设备也没用（<see cref="RoomState.AllowDetail"/> 会拦掉）。
+        /// </para>
         /// </remarks>
         [HarmonyPatch(typeof(ClueManager), nameof(ClueManager.TakeDeviceClue))]
         internal static class TakeDeviceClueHook
         {
             private static void Postfix(S_SCAN_DEVICE pkt)
             {
+                if (pkt == null || pkt.InfoList == null)
+                {
+                    return;
+                }
+
+                foreach (PropositionInfo info in pkt.InfoList)
+                {
+                    if (info != null && UnknownFields.HasFlag(info))
+                    {
+                        RoomState.ApplyRemote(UnknownFields.GetFlag(info));
+                        break;
+                    }
+                }
+
                 int deviceId = ActivityMap.PendingDeviceId;
-                if (deviceId == 0 || pkt == null || pkt.InfoList == null)
+                if (deviceId == 0)
                 {
                     return;
                 }

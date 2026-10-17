@@ -1,4 +1,4 @@
-# ClueDetail 开发规范
+﻿# ClueDetail 开发规范
 
 《Deadly Trick》的**独立** BepInEx 5 插件，用于还原 0.1.18 从线索里移除的「详细活动」。
 
@@ -69,8 +69,11 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 1. **不许污染原版字段。** 详细活动只能走 `PropositionInfo` 的 protobuf **未知字段（字段号 4）**
    —— 0.1.18 已弃用该号且未复用；任何改写 `RoomId`/`PlayerId`/`Time` 的方案都会让
    **未装插件的客户端**显示错乱，绝对禁止。
-2. **未装插件的客户端必须保持原版行为。** 不新增 opcode 的解析依赖、不改原版包结构；
-   新增 opcode 时对端查不到会静默 `return`（`PacketManager.OnRecvPacket`），这是允许的通道。
+2. **未装插件的客户端必须保持原版行为。** 只用 protobuf 未知字段，不改原版包结构。
+   ⚠️ **自定义 opcode 走不通（已实测证伪）**：`ServerSession.Send` 用
+   `Enum.Parse(PacketID, packet.Descriptor.Name)` 反解 opcode（0.1.18 :162551），
+   自定义消息的名字不在 `PacketID` 枚举里会直接抛异常；`PacketManager.RegisterMake`
+   只能注册**接收**。所以跨端数据一律走 `PropositionInfo` 未知字段。
 3. **同名类型必须显式限定**：本程序集有 `ClueDetail.Features.Client` / `...Host`，
    而游戏里 `Server.Game.*` / `Data.*` 到处重名。用别名：
    `using ServerDevice = Server.Game.Device;`、`using GamePlayer = Server.Game.Player;`。
@@ -111,8 +114,10 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 
 按依赖顺序：
 
-1. **客户端能力握手**：装了插件的客户端上线时声明自己（自定义 opcode，或复用现有包），
-   服务端据此决定是否下发详细活动。
+1. ~~客户端能力握手~~ **已做（状态通道）**：房主侧把开关写进 `PropositionInfo` 未知字段（号 6，
+   0 也写），客户端读取后跟随；房主没装时无标记 → 客户端自采集兜底。见 `Core/RoomState.cs`。
+   剩下的**客户端能力上报**（服务端想知道谁装了）需要挂 internal 的 `HostPacketHandler`，
+   用 `AccessTools.TypeByName` + `[HarmonyTargetMethod]`；目前不阻塞任何玩法。
 2. **房主开关 + 同步**：房主关闭时客户端跟随（房间级状态，不是本地 cfg）。
 3. **大厅设置页单选框**：与其它房间设置并列；只对装了插件的玩家显示。
 4. **伪证 UI 还原**：0.1.18 的 `UI_GameTablet` 只剩 who/hour/minute 三个下拉
