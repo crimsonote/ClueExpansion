@@ -196,8 +196,9 @@ csproj **不引用**它的程序集，拿不到就只记一行提示。
 | 集成点 | 2.0 状态 |
 | --- | --- |
 | 配置入口 `DT_Tools.Core.Engine.Config` | ✅ 仍在（public static 属性） |
-| 命令桥 `WebConsole.ExecuteCommandText(string)` | ❌ **已不存在**（2.0 的 `WebConsole` 只剩 `Post`/`RunOnMain`/`Init`） |
-| `SectionCategories` / `category` 字段 | ❌ **已删除**，配置页改由标签体系归组 |
+| 命令桥 `WebConsole.ExecuteCommandText(string)` | ⚠️ **已降为 `private static`**（类名与签名都没变）⇒ 命令桥仍可行，挂载改用字符串名 |
+| `SectionCategories` | ❌ 已删除；替代品是 `SectionGroups`（段名→组）+ `SectionTags` + `SectionSides` |
 
-所以：**没有做分类登记**（2.0 没有对应物）；
-**命令桥待定** —— 本模块目前没有命令域，要做需先设计命令（`cd_*`）并另找 2.0 的执行入口。
+所以：**没有做分类登记**（旧字段已删，替代品尚未复核）；
+**命令桥暂不做** —— 挂点其实是有的（只降了可见性），但本模块目前没有命令域，
+且上游"命令列表缓存"那侧的做法在 2.0 变了、需先重查。
