@@ -112,6 +112,11 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 | `Managers.Data.TextDic`（public Dictionary） | 34272 | 词条注入 |
 | `Managers.GetText(string)` | 43295 | 命中不到会返回 key 本身并报错 |
 | `Managers.Language` | 43200 | 当前语言（`Define.ELanguage`） |
+| `Data.DeviceData.RoomType` / `.WhatType` | 182965 / 182979 | 按房间推断活动（客户端静态表） |
+| `Server.Game.DeviceManager.Scan(Player,int)` | 166680 | 旁观者守卫（放行挂点） |
+| `Server.Game.Player.IsSpectator` | 29694 | 可写属性（放行时临时置 false） |
+| `Managers.Update` | —— | 补扫调度（每帧一次状态检查） |
+| `Managers.Device.Cache` | —— | 客户端已加载设备（`Info.Bubble == -1` = 可调查） |
 
 `Core/LocalizationData.cs` 是**生成文件**（46 条词条 × 5 语言），
 来源 `.tmps/gamedata/TextData.json`（0.1.16b 基线），不要手改。
@@ -133,10 +138,14 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 4. **伪证 UI 还原**：0.1.18 的 `UI_GameTablet` 只剩 who/hour/minute 三个下拉
    （反编译 :51623-51631），旧版还有 `what` 下拉（0.1.17a 的 `RefreshWhat` /
    `OnWhatDropdownValueChanged` / `HasLieWhatOptions`）—— 需要按旧版重建一个 `TMP_Dropdown`。
-5. **死者 / 旁观者全线索**：自动获得所有线索；无法判明设备时对所有可调查设备
-   （`Bubble == -1`）依次补扫。
-6. **自采集增强**：记录"本机自己所进行的活动与设备"（不只扫描）；
-   一个设备对应多个行动而无法判明时记为"在设备进行操作"。
+5. ~~死者 / 旁观者全线索~~ **已做（待实机）**：`Features/Client/FullClue` 在调查阶段对本机
+   `Bubble == -1` 的设备逐个补发扫描（每帧一个）；`Features/Host/SpectatorScan` 为旁观者
+   放行服务端的 `IsSpectator` 守卫。房主没装时旁观者的请求没有响应，靠
+   `ActivityMap.MatchesPendingRoom` 的房间校验挡住队列错位。
+6. ~~自采集增强~~ **已做（换了更稳的手段）**：不再靠"记录自己操作过哪台设备"——
+   客户端时钟与服务端线索时间对不齐，而且同一线索可能对应多台设备。改为
+   `Core/RoomDeviceScan` 按线索房间从设备表反推：去重后唯一 ⇒ 精确；
+   多种 ⇒ 歧义，退化为通用文案「操作了设备」（`Localization.GenericActivityKey`）。
 
 ## 7. 过程材料
 

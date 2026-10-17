@@ -33,7 +33,7 @@ namespace ClueDetail.Features.Client.ClueRender
         }
 
         /// <summary>
-        /// 本机发起扫描时记下待扫设备。
+        /// 本机发起扫描时把设备号压进待响应队列。
         /// </summary>
         /// <remarks>
         /// <c>DeviceBase.Scan</c> 是私有方法（0.1.18 反编译 :4952）：它启动 2 秒扫描条，
@@ -46,20 +46,21 @@ namespace ClueDetail.Features.Client.ClueRender
             {
                 if (__instance != null)
                 {
-                    ActivityMap.PendingDeviceId = __instance.ID;
+                    ActivityMap.QueueScan(__instance.ID);
                 }
             }
         }
 
         /// <summary>
-        /// 收到扫描结果时：① 读取房主侧状态标记；② 把这一批线索登记到刚才那台设备上。
+        /// 收到扫描结果时：① 读取房主侧状态标记；② 把这一批线索登记到队首那台设备上。
         /// </summary>
         /// <remarks>
         /// <c>S_SCAN_DEVICE</c> 只带 InfoList，协议里没有设备号 —— 所以"这次扫的是哪台设备"
         /// 只能由客户端自己在请求与响应之间搭桥。键与 <c>AlreadyExistClue</c> 的原版去重口径一致
         /// （PlayerId + RoomId + Time）。
         /// <para>
-        /// 状态标记必须先读：房主装了但关闭时，登记设备也没用（<see cref="RoomState.AllowDetail"/> 会拦掉）。
+        /// 配对前先用房间号校验队首：请求被服务端拒掉（旁观者）时不会有响应，
+        /// 那种情况下队首会与响应对不上，此时**不出队也不关联**，避免把整条队列错位。
         /// </para>
         /// </remarks>
         [HarmonyPatch(typeof(ClueManager), nameof(ClueManager.TakeDeviceClue))]
@@ -81,7 +82,20 @@ namespace ClueDetail.Features.Client.ClueRender
                     }
                 }
 
-                int deviceId = ActivityMap.PendingDeviceId;
+                if (pkt.InfoList.Count == 0)
+                {
+                    // 空响应（该设备没有线索）也要出队，否则队列会一直卡住。
+                    ActivityMap.TakeScan();
+                    return;
+                }
+
+                PropositionInfo first = pkt.InfoList[0];
+                if (first == null || !ActivityMap.MatchesPendingRoom(first.RoomId))
+                {
+                    return;
+                }
+
+                int deviceId = ActivityMap.TakeScan();
                 if (deviceId == 0)
                 {
                     return;
@@ -94,8 +108,6 @@ namespace ClueDetail.Features.Client.ClueRender
                         ActivityMap.Remember(info.PlayerId, info.Time, info.RoomId, deviceId);
                     }
                 }
-
-                ActivityMap.PendingDeviceId = 0;
             }
         }
     }

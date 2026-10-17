@@ -1,9 +1,11 @@
-﻿using Data;
+﻿using System.Collections.Generic;
+using Data;
 
 namespace ClueDetail.Core
 {
     /// <summary>
-    /// 把 0.1.18 从语言表整体删除的设备活动词条（46 条）注入回 <c>Managers.Data.TextDic</c>。
+    /// 把 0.1.18 从语言表整体删除的设备活动词条（46 条）注入回 <c>Managers.Data.TextDic</c>，
+    /// 外加本模块自有词条。
     /// </summary>
     /// <remarks>
     /// 0.1.18 的五个语言表里 <c>W*</c> 词条全部为 0 条，而 <c>Managers.GetText</c> 命中不到时
@@ -14,7 +16,31 @@ namespace ClueDetail.Core
     /// </remarks>
     internal static class Localization
     {
+        /// <summary>「无法判明具体设备」时用的通用活动词条。</summary>
+        public const string GenericActivityKey = "ClueDetailDeviceAction";
+
+        /// <summary>本模块自有词条（0.1.18 里没有对应概念，所以不进生成文件 LocalizationData）。</summary>
+        private static readonly Dictionary<string, Dictionary<string, string>> Extra =
+            new Dictionary<string, Dictionary<string, string>>
+            {
+                {
+                    GenericActivityKey,
+                    new Dictionary<string, string>
+                    {
+                        { "CHS", "操作了设备" },
+                        { "CHT", "操作了設備" },
+                        { "ENG", "used a device" },
+                        { "JPN", "装置を操作した" },
+                        { "KOR", "장치를 조작했" },
+                    }
+                },
+            };
+
         private static bool _installed;
+        private static string _genericActivity;
+
+        /// <summary>通用活动文案；未注入完成时为 null。</summary>
+        public static string GenericActivity => _genericActivity;
 
         public static string CurrentLanguage()
         {
@@ -37,36 +63,59 @@ namespace ClueDetail.Core
             }
 
             var data = Managers.Data;
-            if (data == null || data.TextDic == null || data.TextDic.Count == 0)
+            Dictionary<string, TextData> textDic = data?.TextDic;
+            if (textDic == null || textDic.Count == 0)
             {
                 return false;
             }
 
             string lang = CurrentLanguage();
-            int injected = 0;
+            int injected = Inject(textDic, LocalizationData.Entries, lang);
+            injected += Inject(textDic, Extra, lang);
 
-            foreach (var pair in LocalizationData.Entries)
-            {
-                if (data.TextDic.ContainsKey(pair.Key))
-                {
-                    continue;
-                }
-
-                if (!pair.Value.TryGetValue(lang, out string text) || string.IsNullOrEmpty(text))
-                {
-                    if (!pair.Value.TryGetValue("ENG", out text))
-                    {
-                        continue;
-                    }
-                }
-
-                data.TextDic[pair.Key] = new Data.TextData { DataId = pair.Key, Text = text };
-                injected++;
-            }
+            _genericActivity = Pick(Extra, GenericActivityKey, lang);
 
             _installed = true;
             Log.Info($"注入旧版活动词条 {injected} 条（语言 {lang}）。");
             return true;
+        }
+
+        private static int Inject(Dictionary<string, TextData> textDic, Dictionary<string, Dictionary<string, string>> source, string lang)
+        {
+            int count = 0;
+            foreach (var pair in source)
+            {
+                if (textDic.ContainsKey(pair.Key))
+                {
+                    continue;
+                }
+
+                string text = Pick(source, pair.Key, lang);
+                if (string.IsNullOrEmpty(text))
+                {
+                    continue;
+                }
+
+                textDic[pair.Key] = new TextData { DataId = pair.Key, Text = text };
+                count++;
+            }
+
+            return count;
+        }
+
+        private static string Pick(Dictionary<string, Dictionary<string, string>> source, string key, string lang)
+        {
+            if (!source.TryGetValue(key, out var entry) || entry == null)
+            {
+                return null;
+            }
+
+            if (entry.TryGetValue(lang, out string text) && !string.IsNullOrEmpty(text))
+            {
+                return text;
+            }
+
+            return entry.TryGetValue("ENG", out text) ? text : null;
         }
     }
 }
