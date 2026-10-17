@@ -86,6 +86,12 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
    `PacketHandler.Handle_S_SCAN_DEVICE`）。
 6. **未知字段写入必须幂等**：`UnknownField.varintList` 是**追加**语义，重复写会变成两个值。
    `UnknownFields.SetWhat` 已内置 `GetWhat != 0` 短路。
+7. **`Log` 会撞名**：游戏在**全局命名空间**有 `public static class Log`。本模块的日志门面在
+   `ClueDetail.Core` 下 —— 跨命名空间（如 `ClueDetail.Features.*`）时必须写
+   `global::ClueDetail.Core.Log.XXX`；`using Log = ...` 别名会被编译器直接拒绝
+   （CS0576：别名不能与全局类型同名），实测踩过。
+8. **克隆原版控件必须 `RemoveAllListeners()`**：`Instantiate` 会把原版监听器一起复制，
+   症状是「拨我的开关连带改了原版设置」。写配置后必须显式 `Save()`，否则改完退出就丢。
 
 ## 5. 游戏 API 锚点（0.1.18）
 
@@ -118,8 +124,12 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
    0 也写），客户端读取后跟随；房主没装时无标记 → 客户端自采集兜底。见 `Core/RoomState.cs`。
    剩下的**客户端能力上报**（服务端想知道谁装了）需要挂 internal 的 `HostPacketHandler`，
    用 `AccessTools.TypeByName` + `[HarmonyTargetMethod]`；目前不阻塞任何玩法。
-2. **房主开关 + 同步**：房主关闭时客户端跟随（房间级状态，不是本地 cfg）。
-3. **大厅设置页单选框**：与其它房间设置并列；只对装了插件的玩家显示。
+2. ~~房主开关 + 同步~~ **已做**：`[ClueRecordDetail] BroadcastDetail`，值写进未知字段号 6，
+   客户端在 `RoomState` 里跟随（房主关闭 ⇒ 客户端连自采集一起停）。
+3. ~~大厅设置页单选框~~ **已做（待实机）**：`Features/UI/LobbyToggle/` 克隆原版开关行挂进
+   「详细设置」的「其它」页；仅房主可改；只有装了本模块的玩家能看到这一行。
+   ⚠️ 0.1.18 动过 `common_prefab`，若日志出现「找不到设置页内容容器 ETCPresetContent」，
+   说明 prefab 层级又变了，按 HideAndSeek 的 `Features/UI/EXTENDING.md` §6 重新对名字。
 4. **伪证 UI 还原**：0.1.18 的 `UI_GameTablet` 只剩 who/hour/minute 三个下拉
    （反编译 :51623-51631），旧版还有 `what` 下拉（0.1.17a 的 `RefreshWhat` /
    `OnWhatDropdownValueChanged` / `HasLieWhatOptions`）—— 需要按旧版重建一个 `TMP_Dropdown`。
