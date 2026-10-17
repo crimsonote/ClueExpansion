@@ -46,6 +46,8 @@ $targets = @(
     @{ Type = "Util";                         Method = "TestFormatProposition";  Args = 1; Note = "调试句式" }
     @{ Type = "ClueManager";                  Method = "TakeDeviceClue";         Args = 1; Note = "线索↔设备关联" }
     @{ Type = "Server.Game.ClueMirror";       Method = "Add";                       Args = 2; Note = "广播线索自带设备号（精确路径）" }
+    @{ Type = "Server.Game.TrialManager";    Method = "set_State";                 Args = 1; Note = "二次投票：阶段改道" }
+    @{ Type = "Server.Game.TrialManager";    Method = "VotePlayer";                Args = 2; Note = "二次投票：拒收投黑幕的票" }
     @{ Type = "DeviceBase";                   Method = "Scan";                   Args = 0; Note = "记录待扫设备" }
     @{ Type = "Managers";                     Method = "Update";                 Args = 0; Note = "补扫调度" }
     @{ Type = "UI_LobbyPreset";               Method = "Init";                   Args = -1; Note = "设置页建行" }
