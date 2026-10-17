@@ -117,6 +117,16 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 反编译口径：`.tmps\decomp\Assembly-CSharp-0.1.18.decompiled.cs`（183351 行，2026-10-16）。
 引用一律带行号，游戏升级后按这些行号逐条复核。
 
+**基准指纹**（2026-10-18 记录，用来判断"游戏是否已升级"）：
+
+| 项 | 值 |
+| --- | --- |
+| `Assembly-CSharp.dll` 文件时间 | 2026-10-16 16:37:19 |
+| MVID | `baf64ef4-e6fb-4b89-b45c-3913dcfd481a` |
+
+⚠️ 判断基准是否还成立，**最快的办法是重跑 `tools/check-targets.ps1`** ——
+它直接读游戏 DLL 逐个验证补丁目标存在，PASS 就说明行号锚点仍然有效（比对比 MVID 更直接）。
+
 | 目标 | 行号 | 用途 |
 | --- | --- | --- |
 | `Server.Game.Device.RecordLastUsingPlayer(Player, EWhatState)` | 166386 | 记录 what（Prefix） |
