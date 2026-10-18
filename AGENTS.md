@@ -187,8 +187,17 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
    「详细设置」的「其它」页；仅房主可改；只有装了本模块的玩家能看到这一行。
    ⚠️ 0.1.18 动过 `common_prefab`，若日志出现「找不到设置页内容容器 ETCPresetContent」，
    说明 prefab 层级又变了，按 HideAndSeek 的 `Features/UI/EXTENDING.md` §6 重新对名字。
-4. ~~伪证 UI 还原~~ **已做（待实机）**：`Features/Client/LieWhat/` 克隆界面上已有的下拉作为
-   控件，选项用 `RoomDeviceScan`（旧版是已删除的 `ClueManager.RoomObjectDict`），
+4. ~~伪证 UI 还原~~ **已做（待实机）**：`Features/Client/LieWhat/` —— 还原旧版的**整行**「活动」。
+   ⚠️ 2026-10-18 修正：早前只克隆了一个下拉、位置还压在别的行上；现在按旧版 prefab 的真实结构还原。
+   旧版（0.1.17a，从上一版残留的 bundle 里读到）是 `LieList` 下
+   `LieWhereText`(y=301.9) / `Who`(y=180) / `When`(y=50) / **`What`(y=-80)** / `LieClueParent`(y=-208)，
+   `What` 行内 = `LieWhatText`(300x50 @ (-250,+50)) + `WhatDrop`(**550x60**)；
+   0.1.18 删掉 What 行后把 Who/When 上移（140 / -40），`LieClueParent` 没动。
+   现在：克隆 `Who` 整行 → 立刻改名（原版 `Bind` 是按名字递归找的）→ 放回 `When` 下方 110 →
+   标题取本模块词条 `Localization.WhatLabelKey`（0.1.18 连 `What` 词条一起删了）→
+   `RemoveAllListeners()` 后重绑。选项用 `RoomDeviceScan`（旧版是已删除的 `ClueManager.RoomObjectDict`）；
+   **房间里没有可调查设备时列出全部活动**（旧版是干脆不许在这种房间伪造，0.1.18 改成只看服务端
+   下发的 `LieRoomSet`（`CanLieInRoom` :53713）——房间准入仍按服务端口径，本模块不替它收紧）。
    选中后写进 `LieClue.Clue.Info` 的未知字段。提交链路不用改：服务端 `SubmitProposition`
    原样保存并广播 `Info`（0.1.18 :182232-182246），未知字段自动传遍全房。
 5. ~~死者 / 旁观者全线索~~ **已做（待实机）**：`Features/Client/FullClue` 在调查阶段对本机
