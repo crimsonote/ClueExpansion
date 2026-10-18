@@ -7,11 +7,11 @@ namespace ClueDetail.Features.Client.LieWhat
     internal partial class LieWhatFeature
     {
         /// <summary>
-        /// 平板初始化后补建下拉。
+        /// 平板初始化后补建「活动」那一行。
         /// </summary>
         /// <remarks>
         /// <c>UI_GameTablet.Init</c> 返回 false 表示 <c>InitBase._init</c> 守卫拦下了（此前已初始化），
-        /// 那时界面上已经有我们的下拉，不要重复建。
+        /// 那时界面上已经有我们的行，不要重复建。
         /// </remarks>
         [HarmonyPatch(typeof(UI_GameTablet), nameof(UI_GameTablet.Init))]
         internal static class InitHook
@@ -21,7 +21,7 @@ namespace ClueDetail.Features.Client.LieWhat
                 if (!FeatureLoader.Enabled<LieWhatFeature>()) return;
                 if (__result)
                 {
-                    LieWhatDropdown.Build(__instance);
+                    LieWhatRow.Build(__instance);
                 }
             }
         }
@@ -39,7 +39,7 @@ namespace ClueDetail.Features.Client.LieWhat
             private static void Postfix(UI_GameTablet __instance, RoomData data)
             {
                 if (!FeatureLoader.Enabled<LieWhatFeature>()) return;
-                LieWhatDropdown.Refresh(__instance, data);
+                LieWhatRow.Refresh(__instance, data);
             }
         }
     }

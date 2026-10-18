@@ -51,6 +51,15 @@ namespace ClueDetail.Features.Client.ClueCard
         /// <summary>活动卡面的横向中心（相对行中心）。</summary>
         public static ConfigEntry<float> WhatX { get; private set; }
 
+        /// <summary>
+        /// 解析不出具体活动时，是否退化为「该房间存在的第一种设备」的卡面。
+        /// </summary>
+        /// <remarks>
+        /// 默认开：宁可给一张**这个房间里确实有**的设备图，也不要在那一格留一片空白。
+        /// 文本那边不跟着猜 —— 整句仍是通用文案（「操作了设备」）或原版句式。
+        /// </remarks>
+        public static ConfigEntry<bool> GuessWhatCard { get; private set; }
+
         /// <summary>分隔竖线的横向中心（相对行中心）。</summary>
         public static ConfigEntry<float> LineX { get; private set; }
 
@@ -80,7 +89,7 @@ namespace ClueDetail.Features.Client.ClueCard
                 true,
                 "是否补上「活动卡面」（= 这张线索对应设备的图像，旧版排版里在房间与时间之间）。\n" +
                 "图源沿用旧版口径：先找 {活动}_{房间}_card，找不到再退回 {活动}_card。\n" +
-                "房主没装本模块、线索也推断不出活动时，这一格自动留空。");
+                "解析不出活动时的行为见 GuessWhatCard；那一格彻底没图时留空。");
 
             WhatCardSize = config.Bind(
                 section,
@@ -89,6 +98,16 @@ namespace ClueDetail.Features.Client.ClueCard
                 new ConfigDescription(
                     "活动卡面的边长（正方形，单位 = prefab 像素）。",
                     new AcceptableValueRange<float>(16f, 200f)));
+
+            GuessWhatCard = config.Bind(
+                section,
+                "GuessWhatCard",
+                true,
+                "解析不出具体活动时（房主没装本模块、或这个房间有好几种设备），\n" +
+                "是否退化为「该房间存在的第一种设备」的卡面 —— 只是别让那一格空着。\n" +
+                "⚠️ 这时文本**不会**跟着猜：整句仍是通用文案「操作了设备」或原版句式，\n" +
+                "所以图只表示「这个房间里确实有这台设备」，不表示「这次就是它」。\n" +
+                "想要「不确定就完全留空」的话，把本项关掉。");
 
             RoomX = config.Bind(
                 section,

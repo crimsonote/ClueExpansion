@@ -113,6 +113,8 @@ namespace ClueDetail.Features.Client.ClueCard
 
         private static bool _warned;
 
+        private static bool _guessedLogged;
+
         /// <summary>
         /// 按这一行实际是「线索」还是「伪证」补齐节点、套版式、填内容。
         /// </summary>
@@ -202,6 +204,7 @@ namespace ClueDetail.Features.Client.ClueCard
 
             MissingSprites.Clear();
             _warned = false;
+            _guessedLogged = false;
         }
 
         // ══════════════════ 建 / 拆 ══════════════════
@@ -385,8 +388,9 @@ namespace ClueDetail.Features.Client.ClueCard
         /// 填活动卡面。图源沿用旧版口径：先 <c>{活动}_{房间}_card</c>，再 <c>{活动}_card</c>。
         /// </summary>
         /// <remarks>
-        /// ⚠️ 活动解析不出来（<c>WNone</c>）或者图片没被预载时，**宁可留空也不猜**：
-        /// 猜错的活动图比空白更有害（玩家会据此断定某人做过某事）。
+        /// ⚠️ 活动解析不出来（<c>WNone</c>）时，按 <see cref="ClueCardFeature.GuessWhatCard"/> 决定：
+        /// 默认退化为「该房间存在的第一种设备」的卡面（别让那一格空着），
+        /// 但**文本不跟着猜** —— 仍是通用文案或原版句式。图片确实取不到时留空。
         /// </remarks>
         private static void FillWhatCard(ClueCardExtra extra, ClueManager.Clue clue)
         {
@@ -397,6 +401,11 @@ namespace ClueDetail.Features.Client.ClueCard
             }
 
             EWhatType what = ClueWhat.Resolve(clue);
+            if (what == EWhatType.WNone)
+            {
+                what = GuessFromRoom(clue.Info.RoomId);
+            }
+
             if (what == EWhatType.WNone)
             {
                 SetImageEnabled(extra.WhatImage, false);
@@ -419,6 +428,42 @@ namespace ClueDetail.Features.Client.ClueCard
             image.sprite = sprite;
             image.color = Color.white;
             image.enabled = true;
+        }
+
+        /// <summary>
+        /// 活动解析不出来时的兜底：这个房间里第一种设备。
+        /// </summary>
+        /// <remarks>
+        /// 为什么敢给：候选集是从**客户端自己的设备表**里按房间反查出来的
+        /// （<see cref="RoomDeviceScan.CandidatesOf"/>），所以图上这台设备**确实在那个房间里**，
+        /// 只是不一定就是这条线索对应的那一台。房主明确关了下发时（<c>AllowDetail == false</c>）
+        /// 一律不给 —— 那是"别补"，不是"补不出来"。
+        /// </remarks>
+        private static EWhatType GuessFromRoom(int roomId)
+        {
+            if (ClueCardFeature.GuessWhatCard == null || !ClueCardFeature.GuessWhatCard.Value)
+            {
+                return EWhatType.WNone;
+            }
+
+            if (!RoomState.AllowDetail)
+            {
+                return EWhatType.WNone;
+            }
+
+            List<EWhatType> candidates = RoomDeviceScan.CandidatesOf(roomId);
+            if (candidates == null || candidates.Count == 0)
+            {
+                return EWhatType.WNone;
+            }
+
+            if (!_guessedLogged)
+            {
+                _guessedLogged = true;
+                global::ClueDetail.Core.Log.Info("线索卡片：有线索解析不出具体活动，卡面退化为该房间的第一种设备。");
+            }
+
+            return candidates[0];
         }
 
         private static void FillSentence(ClueCardExtra extra, ClueManager.Clue clue)

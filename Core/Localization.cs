@@ -19,6 +19,9 @@ namespace ClueDetail.Core
         /// <summary>「无法判明具体设备」时用的通用活动词条。</summary>
         public const string GenericActivityKey = "ClueDetailDeviceAction";
 
+        /// <summary>伪证页「活动」那一行的行标题（0.1.18 连 <c>What</c> 词条一起删了）。</summary>
+        public const string WhatLabelKey = "ClueDetailWhatLabel";
+
         /// <summary>本模块自有词条（0.1.18 里没有对应概念，所以不进生成文件 LocalizationData）。</summary>
         private static readonly Dictionary<string, Dictionary<string, string>> Extra =
             new Dictionary<string, Dictionary<string, string>>
@@ -34,13 +37,28 @@ namespace ClueDetail.Core
                         { "KOR", "장치를 조작했" },
                     }
                 },
+                {
+                    WhatLabelKey,
+                    new Dictionary<string, string>
+                    {
+                        { "CHS", "活动" },
+                        { "CHT", "活動" },
+                        { "ENG", "Action" },
+                        { "JPN", "行動" },
+                        { "KOR", "행동" },
+                    }
+                },
             };
 
         private static bool _installed;
         private static string _genericActivity;
+        private static string _whatLabel;
 
         /// <summary>通用活动文案；未注入完成时为 null。</summary>
         public static string GenericActivity => _genericActivity;
+
+        /// <summary>伪证页「活动」行标题；未注入完成时为 null。</summary>
+        public static string WhatLabel => _whatLabel;
 
         public static string CurrentLanguage()
         {
@@ -74,6 +92,7 @@ namespace ClueDetail.Core
             injected += Inject(textDic, Extra, lang);
 
             _genericActivity = Pick(Extra, GenericActivityKey, lang);
+            _whatLabel = Pick(Extra, WhatLabelKey, lang);
 
             _installed = true;
             Log.Info($"注入旧版活动词条 {injected} 条（语言 {lang}）。");

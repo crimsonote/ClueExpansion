@@ -143,7 +143,7 @@ namespace ClueDetail.Core
         public static string UiState()
         {
             return $"设置页开关={(LobbyToggle.IsBuilt ? "已建立" : "未建立")}，" +
-                   $"伪证下拉={(LieWhatDropdown.IsBuilt ? "已建立" : "未建立")}";
+                   $"伪证活动行={(LieWhatRow.IsBuilt ? "已建立" : "未建立")}";
         }
     }
 }
