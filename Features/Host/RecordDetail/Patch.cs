@@ -97,6 +97,7 @@ namespace ClueDetail.Features.Host.RecordDetail
                 {
                     var info = list[i];
                     if (info != null && !info.Destroyed &&
+                        !Define.IsDestroyEvidenceClue(info) &&
                         info.PlayerId == RoleClueId(player, state) &&
                         info.RoomId == __instance.RoomID)
                     {
@@ -157,7 +158,12 @@ namespace ClueDetail.Features.Host.RecordDetail
                 for (int i = 0; i < list.Count; i++)
                 {
                     var info = list[i];
-                    if (info != null && !info.Destroyed && UnknownFields.GetWhat(info) == 0)
+
+                    // ⚠️ 「销毁证据」线索（PlayerId ∈ {11038, 66613}）不写：它们说的是"这台设备的证据
+                    // 被销毁了"这个**动作**，原版渲染成「销毁了证据」；写进设备平时的活动就变成错的
+                    // （实机反馈过：黑那一行显示成「点燃了蜡烛」）。判据与 ClueWhat.TryResolve 的 ⓪ 段一致。
+                    if (info != null && !info.Destroyed && !Define.IsDestroyEvidenceClue(info) &&
+                        UnknownFields.GetWhat(info) == 0)
                     {
                         UnknownFields.SetWhat(info, what);
                     }

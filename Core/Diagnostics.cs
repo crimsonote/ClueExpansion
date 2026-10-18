@@ -161,10 +161,20 @@ namespace ClueDetail.Core
         private static int _clueTraces;
         private static int _hostTraces;
 
+        /// <summary>已经记过的线索键 —— 同一条线索会被渲染多次（卡面 + 整句），不去重会把配额吃光。</summary>
+        private static readonly HashSet<string> Traced = new HashSet<string>();
+
         /// <summary>客户端侧：这条线索的详细活动是从哪一级拿到的。</summary>
         public static void TraceClue(int roomId, int playerId, int time, int what, bool ambiguous, string source)
         {
             if (!LogClueResolution || _clueTraces >= TraceLimit)
+            {
+                return;
+            }
+
+            // 同一条线索只记第一次：一次渲染会走两遍（卡面 + 整句），不去重的话 40 行配额
+            // 会被同几条线索的两两份数吃光 —— 2026-10-18 那局日志 40 行全是 4 条线索，就是这个原因。
+            if (!Traced.Add(roomId + ":" + playerId + ":" + time))
             {
                 return;
             }
@@ -175,7 +185,6 @@ namespace ClueDetail.Core
                 $"线索解析[{_clueTraces}/{TraceLimit}] 房间{roomId} 玩家{playerId} 时间{time}" +
                 $" → 活动 {text}{(ambiguous ? "（歧义）" : "")} 来源={source}");
         }
-
         /// <summary>房主侧：这条要广播的线索有没有在旁路表里命中。</summary>
         public static void TraceHost(int playerId, int time, int roomId, int what, bool hit)
         {

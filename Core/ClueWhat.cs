@@ -53,6 +53,18 @@ namespace ClueDetail.Core
                 return false;
             }
 
+            // ⓪ 「销毁证据」线索**必须保持原版**（2026-10-18 实机反馈「黑那行显示成点燃了蜡烛」查出）。
+            // 判据用游戏自己的口径：Define.IsDestroyEvidenceClue(:95774) = PlayerId ∈ {11038, 66613}
+            // （11038 = MASTERMIND_DESTROY_ID、66613 = 黑），它们由 Device.DestroyEvidence（:166482）造出来，
+            // 描述的是"这台设备的证据被销毁了"这个**动作**，不是该设备平时的活动。
+            // 原版对它们渲染的就是 GetRoleWhatKey(11038/66613) → WhatDestroyEvidence =「销毁了证据」，
+            // 而设备关联会把该设备**平时的活动**（教室点蜡烛 → 「点燃了蜡烛」）贴上去 —— 那是错的。
+            if (Define.IsDestroyEvidenceClue(clue.Info))
+            {
+                Diagnostics.TraceClue(roomId, playerId, time, 0, false, "销毁证据线索（保持原版）");
+                return false;
+            }
+
             // ① 服务端精确下发（房主装了本模块时走这条）
             int fromPacket = UnknownFields.GetWhat(clue.Info);
             if (fromPacket != 0)

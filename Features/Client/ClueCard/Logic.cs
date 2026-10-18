@@ -281,8 +281,18 @@ namespace ClueDetail.Features.Client.ClueCard
                     continue;
                 }
 
+                bool active = child.activeSelf;
+
+                // 分隔竖线是 0.1.18 新加的（旧版图标视图里没有）—— ShowLine=false 时从一开始就当它
+                // 不激活，悬浮结束也不会被恢复出来。
+                if (line != null && child == line.gameObject &&
+                    ClueCardFeature.ShowLine != null && !ClueCardFeature.ShowLine.Value)
+                {
+                    active = false;
+                }
+
                 icons.Add(child);
-                actives.Add(child.activeSelf);
+                actives.Add(active);
             }
 
             extra.IconNodes = icons.ToArray();
@@ -522,20 +532,20 @@ namespace ClueDetail.Features.Client.ClueCard
 
             extra.Sentence.text = Util.FormatProposition(clue) ?? string.Empty;
 
-            if (ClueCardFeature.SentenceFontSize != null && ClueCardFeature.SentenceFontSize.Value > 0f)
-            {
-                // 照旧版 ClueText 节点（350x100 @ -25.3）的 TMP 设置：m_fontSize=16、
-                // m_enableAutoSizing=1（min 5 / max 16）、m_lineSpacing=45、
-                // m_HorizontalAlignment=1（Left —— 就是 SentenceAlignment 的默认值）。
-                // ⚠️ 不这么做就是沿用模板（房间名文本框）的字号：那个是 35、上限也是 35，
-                // 实机反馈的「悬浮字太大」正是它。
-                float size = ClueCardFeature.SentenceFontSize.Value;
-                extra.Sentence.enableAutoSizing = true;
-                extra.Sentence.fontSizeMin = Mathf.Min(5f, size);
-                extra.Sentence.fontSizeMax = size;
-                extra.Sentence.fontSize = size;
-                extra.Sentence.lineSpacing = 45f;
-            }
+            // 照旧版 ClueText 节点（350x100 @ -25.3）的 TMP 设置：m_fontSize=16、
+            // m_enableAutoSizing=1（min 5 / max 16）、m_lineSpacing=45、
+            // m_HorizontalAlignment=1（Left —— 就是 SentenceAlignment 的默认值）。
+            // ⚠️ 不这么做就是沿用模板（房间名文本框）的字号：35 且上限 35，明显偏大。
+            // 配置值 ≤ 0 时**也走旧版的 16** —— 老 cfg 里存着上一版的默认 0，
+            // 不能让它把字号留在模板的 35 上（实机反馈的「字更大」就是这么来的）。
+            float size = ClueCardFeature.SentenceFontSize != null && ClueCardFeature.SentenceFontSize.Value > 0f
+                ? ClueCardFeature.SentenceFontSize.Value
+                : 16f;
+            extra.Sentence.enableAutoSizing = true;
+            extra.Sentence.fontSizeMin = Mathf.Min(5f, size);
+            extra.Sentence.fontSizeMax = size;
+            extra.Sentence.fontSize = size;
+            extra.Sentence.lineSpacing = 45f;
 
             extra.Sentence.alignment = ParseAlignment(ClueCardFeature.SentenceAlignment?.Value);
         }

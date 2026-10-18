@@ -39,6 +39,9 @@ namespace ClueDetail.Features.Client.ClueCard
         /// <summary>是否补上「活动卡面」（设备图像）那一格。</summary>
         public static ConfigEntry<bool> ShowWhatCard { get; private set; }
 
+        /// <summary>是否显示分隔竖线（0.1.18 新加的那条"黄条"；旧版图标视图里没有它）。</summary>
+        public static ConfigEntry<bool> ShowLine { get; private set; }
+
         /// <summary>活动卡面的边长（正方形）。</summary>
         public static ConfigEntry<float> WhatCardSize { get; private set; }
 
@@ -98,6 +101,14 @@ namespace ClueDetail.Features.Client.ClueCard
                 new ConfigDescription(
                     "活动卡面的边长（正方形，单位 = prefab 像素）。",
                     new AcceptableValueRange<float>(16f, 200f)));
+
+            ShowLine = config.Bind(
+                section,
+                "ShowLine",
+                true,
+                "是否显示那条分隔竖线（黄条）。\n" +
+                "⚠️ 它是 0.1.18 新加的 —— **旧版图标视图里没有它**；\n" +
+                "想更贴近旧版观感就设成 false（关掉后图标视图与悬浮视图都不会出现它）。");
 
             GuessWhatCard = config.Bind(
                 section,
@@ -188,7 +199,38 @@ namespace ClueDetail.Features.Client.ClueCard
                 section,
                 "SentenceAlignment",
                 "Left",
-                "整句的水平对齐：Left / Center / Right（大小写不敏感，认不出就用 Left）。");
+                "整句的水平对齐：Left / Center / Right（大小写不敏感，认不出就用 Left）。旧版就是 Left。");
+
+            MigrateLegacyDefaults(config);
+        }
+
+        /// <summary>
+        /// 把「上一版默认值原封不动」的老 cfg 一次性搬到新默认值。
+        /// </summary>
+        /// <remarks>
+        /// ⚠️ BepInEx 的配置值一旦落盘就**永远留着** —— 改代码里的默认值对已经跑过一局的用户
+        /// **完全不起作用**（2026-10-18 实机踩到：整句字号停在上一版的 0，于是沿用房间名模板的
+        /// 35 + 自动缩放，看起来"字更大"，而新默认的 16 根本没生效）。
+        /// 判据取 <c>LineX == 15</c>：那个值只出现在前两版（WhatX=-40 / LineX=15 那套）的默认值里。
+        /// </remarks>
+        private static void MigrateLegacyDefaults(ConfigFile config)
+        {
+            if (LineX == null || global::System.Math.Abs(LineX.Value - 15f) > 0.01f)
+            {
+                return;
+            }
+
+            WhatX.Value = -15f;
+            LineX.Value = -60f;
+            WhenX.Value = 100f;
+            SentenceX.Value = -25.3f;
+            SentenceWidth.Value = 350f;
+            SentenceFontSize.Value = 16f;
+            GuessWhatCard.Value = false;
+            config.Save();
+
+            global::ClueDetail.Core.Log.Info(
+                "线索卡片：检测到配置文件里还是旧版默认布局，已按新默认值重置 [ClueCard] 段（仍可继续手调）。");
         }
 
         /// <summary>
