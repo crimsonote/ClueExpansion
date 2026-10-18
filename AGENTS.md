@@ -69,6 +69,12 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 1. **不许污染原版字段。** 详细活动只能走 `PropositionInfo` 的 protobuf **未知字段（字段号 100）**；
    任何改写 `RoomId`/`PlayerId`/`Time` 的方案都会让**未装插件的客户端**显示错乱，绝对禁止。
    （原版对未知字段是"原样保留并忽略"—— 这正是这条通道成立的依据，见 §4.2。）
+   **例外备案（2026-10-18）**：`Features/Host/ShadowSabotage/` 会**故意**改写线索包里的
+   `Time`，并把 `EWhatState` 从 `Normal` 改成 `Anonymity`（⇒ `PlayerId` 变 0）。
+   那不是搭便车传数据，而是功能本身要的**效果** —— 必须让**未装本模块**的客户端
+   也看到「某人 / 冻结的时间」，否则"隐蔽破坏"就白做了。
+   边界：只在 Survive 阶段、只在对应破坏点处于已破坏状态时生效；只改**包内 / 克隆**的副本，
+   绝不动服务端 `ClueList`（依据见 §10.1 末行与 §10.2 第 4 条）。
 2. **未装插件的一端必须不炸。** 跨端数据分**两条通道**，按数据性质选，不是二选一（2026-10-18 定案）：
    - **线索的「详细活动」→ protobuf 未知字段**（`Core/UnknownFields.cs`，字段号 **100**）。
      它是**线索的一个属性**，附着在 `PropositionInfo` 上天然一一对应：零关联键、无时序要求、
@@ -190,6 +196,10 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
      去重后唯一才敢用，多种就退化为通用文案「操作了设备」（`Localization.GenericActivityKey`）。
      只有在上面两条都没命中时才会走到这里。
 
+7. ~~隐蔽破坏点~~ **已做（待实机）**：`Features/Host/ShadowSabotage/` —— 两个伪装成小熊的
+   服务端破坏点（科学室的身份识别组件 / 电脑室的时钟记录组件），与电闸共用同一条 60 秒 CD。
+   含身份线索污染、时间冻结、断电箭头、黑幕专属电闸图钉、破坏点自身可被调查。**详见 §10。**
+
 ## 7. 过程材料
 
 调查记录、一次性脚本、被证伪的方案放 `D:\git\DT_Tools\.tmps\`（**不进任何仓库**）；
@@ -257,3 +267,81 @@ csproj **不引用**它的程序集，拿不到就只记一行提示。
 连带把黑幕在**本轮审判**里当死者 —— 语音静音（:70861）、聊天进死者频道（:42820）、
 绘画面板列为死者（:54629）。该列表每次审判 `SetInfo` 会先清空（:71945），影响止于审判阶段；
 原版处刑走的是同一套（`MarkExecutedAsDead` :72629）。
+
+## 10. 隐蔽破坏点（`Features/Host/ShadowSabotage/`，纯服务端）
+
+两个**伪装成小熊**的服务端破坏点，与电闸共用同一条 60 秒 CD。
+
+| 点 | 默认坐标 | 破坏期间的效果 |
+| --- | --- | --- |
+| 身份识别组件 | `(6608, 4700)` 科学室最左 | 新线索的 `PlayerId` 一律变 0 ⇒ 全场渲染「某人」（`WhoSomeone`） |
+| 时钟记录组件 | `(9561, 3430)` 电脑室刀架下 | 新线索的 `Time` 冻结在破坏那一刻（**不影响**报告里的死亡时间） |
+
+- **未破坏时只有黑幕**（`EPlayerColor.Dark`）能按 E 破坏；**破坏后所有人**可修。
+  两者都用原版摇汽水条（物品 1039，满值 24，100ms 自续链），**打断保留进度**。
+- 破坏 **+10 秒**给**所有存活者**发断电箭头（`FuseboxArrow`）；**刻意不发任何文字通知**。
+- 地图上的电闸图钉**只给黑幕**（走原版 `SendSabotageMission`，它本就只发 `MasterMind`）。
+- 破坏点自己留到调查阶段，**任何人**都能扫出「黑幕 于 … 在 科学室 切断了电力」。
+- **CD 中**：无图钉 + 不可交互；但**小熊本体始终在场**（留到调查阶段用）。
+- 文件：`Feature.cs`（配置）/ `Patch.cs`（补丁）/ `Logic.cs`（编排 + 污染判定）/
+  `State.cs`（运行期状态）/ `Device.cs`（`BreakerDevice`）/ `Bar.cs`（进度条）/ `Wire.cs`（包构造）。
+
+### 10.1 机制依据（0.1.18，动手改之前逐条复核）
+
+| 用到的机制 | 位置 | 说明 |
+| --- | --- | --- |
+| 客户端按什么选 prefab | `Managers.Device.HandleAddDevice` :28247 | 先查 `DeviceDic[DeviceId]`，**没命中才退回 `info.Type.ToString()`** ⇒ 只要 ID 不在那张表里就用 `"Summon"`（小熊） |
+| 小熊贴图/状态刷新 | 客户端 `Summon.RefreshState` :4136 | **断言 `StateList.Count == 2`** ⇒ 第三槽会让整段刷新被跳过 |
+| 按 E 提示从哪来 | 客户端 `Summon.GetInteractMessage` :4159 | 只认 `StateList[1] == MyPlayerId` + `_isActivate`（出生动画约 1.5s 后才 true） |
+| 按 E 的服务端链路 | `Handle_C_INTERACT_SUMMON` :177619 → `DeviceManager.Interact` :166617 → `Device.Interact` | **不校验主人**，只看设备 ID ⇒ 假主人是纯客户端观感 |
+| 交互的阶段守卫 | `DeviceManager.Interact` :166617 | 非 Door/Cabinet/Vent 的设备**只在 `State == Survive` 且未 AllClear** 时转发 |
+| ⚠ 可调查与按 E **互斥** | 客户端 `DeviceBase.InteractBase` :4843 / `GetInteractMessageBase` :4880 | `Bubble == -1` 是**第一优先** ⇒ 置上之后按 E 只会「调查」，**再也不能修复** |
+| 可调查自动生效 | `Device.StartDetective` :166531 | `ClueList.Count == 0 ? Bubble = 0 : Bubble = -1` 并广播 ⇒ **只要塞了线索就不用自己设 Bubble** |
+| 与电闸共用 CD | `DeviceManager.StartFuseboxSabotage` :166828 | 调用点只有 `InitDevices`（开局 :167336）与 `RefreshLight` 的 case 0（供电全恢复 +60s :176585） |
+| 电箱图钉只发黑幕 | `GameRoom.SendSabotageMission` :174389 | 只发给 `MasterMind`（且要求 `IsAlive`） |
+| 箭头写法 | `DeviceManager.BroadcastFuseArrow` :166870 | `BroadcastAlivePlayers(S_NOTIFY_ARROW{FuseboxArrow, Pos})` |
+| 身份污染的值 | `Device.RecordLastUsingPlayer` :166393 | `Anonymity` ⇒ `playerId = 0`；`Mastermind` ⇒ 11037；`Black` ⇒ 66613 |
+| 时间污染为什么安全 | 同上 :166415-166436 | 原版**先 `Clone()` 再 `Broadcast`** ⇒ 改包内 `Info` 不碰服务端 `ClueList` 与 30 秒去重窗口 |
+
+### 10.2 六个必须记住的坑（都实际踩过或有硬依据）
+
+1. **设备 ID 取 90 万段**（`900101` / `900102`）。客户端按 `DeviceDic` 是否命中决定 prefab，
+   ID 命中就会变成别的设备外观；而 `ObjectUtils.GenerateNewId()`（原版小熊用的那个）
+   从 16 起递增、**每局 `Clear()` 还会重置**，我们的设备跨局常驻，用它迟早撞车。
+2. **`StateList` 必须恰好 2 槽**：`[0]` = 0 正常 / **2 已破坏**（避开 `1` —— `1` 会触发
+   范围圈 `ShowRange` 与麦克风静音 `MuteMicWorld`），`[1]` = 假主人位。
+   进度、CD、伪装名单一律放服务端字典。
+3. **不走 `DeviceManager.CreateSummon`**：一旦进 `_summons` 就会被凛的附身技能
+   （`PossessMarionette` → `GetSummon`）认领。我们直接 `SpawnDevice`。
+4. **两个污染钩子的 `[HarmonyPriority]` 不能省**（与本模块 `RecordDetail` 抢同一个方法）：
+   - 身份：`Priority.First` —— `RecordDetail.RecordHook` 按 `state` 算 `playerId` 记旁路表，
+     必须让它看到改过之后的值，两边键才对得上；
+   - 时间：`Priority.Last` —— 分别要**晚于** `BroadcastHook`（它拿 `(PlayerId, Time, RoomId)`
+     查表，改早了就永远查不到）与 `ScanHook`（它往 `ClueList` 的对象上补「详细活动」，
+     我们克隆得早了线索就没详细活动）。
+5. **必须拦 `ItemManager.DropItem` / `AcquireItem`**：客户端 `DropHand` 是**先本地清手再发包**，
+   放行的话他会把**真物品**丢地上、进度条同时消失（两个钩子只在 `BreakBar.IsActive` 时生效）。
+6. **广播会冲掉假主人**：`BroadcastState()` 带出去的是权威 `DeviceInfo`（其中 `StateList[1] == 0`），
+   所以每次广播之后必须让伪装名单失效并立刻重发（`Finish` / `OnWindowStart` 都做了）。
+
+### 10.3 配置（段 `[ClueShadowSabotage]`）
+
+| 键 | 默认 | 说明 |
+| --- | --- | --- |
+| `PosIdentifyX/Y` | 6608 / 4700 | 身份识别组件坐标 |
+| `PosClockX/Y` | 9561 / 3430 | 时钟记录组件坐标 |
+| `BreakSeconds` | 5 | 进度条推满所需秒数（破坏与修复共用） |
+| `InteractRadius` | 120 | 假主人**进入**半径（原版小熊交互框是 ±75，所以 120 更宽松） |
+| `ExitRadius` | 160 | 假主人**离开**半径（滞回，避免边界闪烁） |
+| `OwnerResendSeconds` | 1.5 | 范围内重发间隔（兜底入场动画期的饥饿） |
+| `NotifyDelaySeconds` | 10 | 破坏后延迟多久发箭头 |
+
+### 10.4 未实机验证（交给使用者在游戏里过一遍）
+
+1. 两个点的坐标是否落在预期位置（科学室最左 / 电脑室刀架下）；
+2. 假主人的生效半径与「按 E」提示是否如期出现（**注意**：假主人会带来原版小熊的
+   近身检测雷达 —— `RuneSfx` + HUD 描边，判据是 `IsOwner`，**纯服务端规避不掉**，已接受）；
+3. 进度条观感与打断后的续跑；
+4. 与电闸那 60 秒的联动（电闸重派发时两个点是否恢复可破坏、图钉是否回来）；
+5. 时间污染期间客户端线索按 `Time` 排序会不稳定（同批线索时间相同，原版 `Clue.CompareTo`
+   用的是 `Time`）—— 已知且可接受。
