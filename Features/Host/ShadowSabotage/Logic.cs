@@ -675,6 +675,10 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                 state.ArrowSent = false;
                 ScheduleArrow(state, device);
 
+                // ③ 把那条「黑幕切断了电力」塞进设备自己的线索表，
+                //    让它留到调查阶段可被任何人扫描（见 InjectClue）。
+                InjectClue(device, state);
+
                 global::ClueDetail.Core.Log.Info(
                     $"破坏点[{KindName(state)}] 破坏生效：{PollutionSummary()}");
                 return;
@@ -758,6 +762,59 @@ namespace ClueDetail.Features.Host.ShadowSabotage
 
             global::ClueDetail.Core.Log.Info(
                 $"破坏点[{KindName(state)}] 已给所有存活者发出断电箭头（延迟 {NotifyDelayValue:F0} 秒）。");
+        }
+
+        /// <summary>
+        /// 往破坏点的 <c>ClueList</c> 塞一条「黑幕切断了电力」的线索（P4）。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <b>刻意不设 <c>DeviceInfo.Bubble = -1</c>。</b>两个理由：
+        /// </para>
+        /// <list type="number">
+        /// <item>客户端 <c>DeviceBase.InteractBase</c>（0.1.18 :4843）与
+        /// <c>GetInteractMessageBase</c>（:4880）都把 <c>Bubble == -1</c> 放在**第一优先** ——
+        /// 一旦置上，按 E 就变成「调查」而**再也不能修复**。所以 Survive 期间必须保持
+        /// <c>Bubble == 0</c>。</item>
+        /// <item>根本不需要自己设：原版 <c>Device.StartDetective</c>（:166531）在侦探阶段开始时
+        /// 会做 <c>ClueList.Count == 0 ? Bubble = 0 : Bubble = -1</c> 并广播 ——
+        /// 只要这里塞了线索，到时候它自动就该可调查。</item>
+        /// </list>
+        /// <para>
+        /// 渲染出来正是需求要的那句：<c>{ PlayerId = 11037, Time, RoomId }</c> ⇒
+        /// 「黑幕 于 … 在 科学室 切断了电力」（11037 = <c>Define.MASTERMIND_SABOTAGE_ID</c>）。
+        /// </para>
+        /// <para>
+        /// 跨局由原版负责：<c>Device.StartSurvival</c>（:166516）会 <c>ClueList.Clear()</c>
+        /// 并发 <c>S_CLEAR_CLUES</c>；<see cref="BreakerState.ClueInjected"/> 也在窗口开始时复位。
+        /// </para>
+        /// </remarks>
+        private static void InjectClue(BreakerDevice device, BreakerState state)
+        {
+            if (state.ClueInjected || device == null || device.ClueList == null)
+            {
+                return;
+            }
+
+            try
+            {
+                device.ClueList.Add(new PropositionInfo
+                {
+                    PlayerId = Define.MASTERMIND_SABOTAGE_ID,   // 11037 = 黑幕 + 切断电力
+                    Time = state.BrokenAt,
+                    RoomId = device.RoomID,
+                });
+
+                state.ClueInjected = true;
+
+                global::ClueDetail.Core.Log.Info(
+                    $"破坏点[{KindName(state)}] 已注入可调查线索" +
+                    $"（黑幕 / {state.BrokenAt} 秒 / 房间 {device.RoomID}）。");
+            }
+            catch (global::System.Exception ex)
+            {
+                global::ClueDetail.Core.Log.Exception(ex, "破坏点：注入可调查线索失败。");
+            }
         }
 
         private static string PollutionSummary()

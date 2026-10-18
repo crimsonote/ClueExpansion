@@ -83,6 +83,7 @@ $members = @(
     @{ Type = "Server.Game.GameRoom";         Member = "BroadcastAlivePlayers"; Kind = "M"; Note = "断电箭头（只发存活者）" }
     @{ Type = "Server.Game.GameRoom";         Member = "SendSabotageMission";   Kind = "M"; Note = "电闸图钉（原版只发黑幕）" }
     @{ Type = "Server.Game.TimeManager";      Member = "PushSurvivalJob";       Kind = "M"; Note = "破坏 10 秒后再发箭头" }
+    @{ Type = "Define";                       Member = "MASTERMIND_SABOTAGE_ID"; Kind = "F"; Note = "可调查线索里的黑幕 id（11037）" }
 )
 
 $fail = 0
