@@ -135,6 +135,54 @@ foreach ($m in $members) {
     }
 }
 
+# ── 我们自己的补丁类归属（防「补丁没挂上」这类静默失效回归）────────────────
+# 背景 2026-10-18：装载器曾用 harmony.PatchAll(功能类)，而那个重载**不扫嵌套类**
+#   ⇒ 28 个补丁一个都没挂上，日志却写着「失败 0」，所有功能静默失效。
+# 这里做静态兜底：每个 [PatchFeature] 名下必须至少归属到 1 个 [HarmonyPatch] 类。
+function Get-AttrNames($type) {
+    @($type.CustomAttributes | ForEach-Object { $_.AttributeType.Name })
+}
+# ⚠️ 嵌套类型在**元数据**里的 Namespace 是空的（Cecil 读出来是 ""），要往外层找。
+function Get-Ns($type) {
+    if ($type.IsNested -and $type.DeclaringType) { return (Get-Ns $type.DeclaringType) }
+    return $type.Namespace
+}
+
+$ourDll = Join-Path $PSScriptRoot "..\bin\Release\netstandard2.1\ClueDetail.dll"
+Write-Host "`n=== 我们自己的补丁类归属（每个功能必须 > 0）===" -ForegroundColor Cyan
+if (-not (Test-Path $ourDll)) {
+    Write-Host ("  FAIL  找不到构建产物：{0}（先跑 dotnet build -c Release）" -f $ourDll) -ForegroundColor Red
+    $script:fail++
+} else {
+    $ours = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($ourDll)
+    $st2 = New-Object System.Collections.Stack
+    foreach ($x in $ours.MainModule.Types) { $st2.Push($x) }
+    $ourAll = New-Object System.Collections.Generic.List[object]
+    while ($st2.Count -gt 0) {
+        $x = $st2.Pop(); $ourAll.Add($x)
+        foreach ($nn in $x.NestedTypes) { $st2.Push($nn) }
+    }
+
+    $feats = @($ourAll | Where-Object { (Get-AttrNames $_) -contains 'PatchFeatureAttribute' })
+    $patchCls = @($ourAll | Where-Object { (Get-AttrNames $_) -contains 'HarmonyPatch' })
+    $sumOwned = 0
+
+    foreach ($feat in ($feats | Sort-Object Name)) {
+        $mine = @($patchCls | Where-Object {
+            ($_.DeclaringType -ne $null -and $_.DeclaringType.FullName -eq $feat.FullName) -or
+            ((-not $_.IsNested) -and ((Get-Ns $_) -eq (Get-Ns $feat)))
+        })
+        $sumOwned += $mine.Count
+        if ($mine.Count -eq 0) {
+            Write-Host ("  FAIL  {0} —— 名下一个 [HarmonyPatch] 类都没有，这个功能不会生效" -f $feat.Name) -ForegroundColor Red
+            $script:fail++
+        } else {
+            Write-Host ("  ok    {0,-22} 补丁类 {1,2}" -f $feat.Name, $mine.Count) -ForegroundColor Green
+        }
+    }
+
+    Write-Host ("  合计：功能 {0} 个 / 补丁类 {1} 个（任一功能归属为 0 即 FAIL）" -f $feats.Count, $sumOwned)
+}
 Write-Host ""
 if ($fail -gt 0) {
     Write-Host ("check FAIL: " + $fail + " 项") -ForegroundColor Red
