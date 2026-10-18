@@ -54,6 +54,10 @@ $targets = @(
     @{ Type = "UI_LobbyPreset";               Method = "Refresh";                Args = 0; Note = "设置页同步" }
     @{ Type = "UI_GameTablet";                Method = "Init";                   Args = -1; Note = "伪证下拉建控件" }
     @{ Type = "UI_GameTablet";                Method = "OnClickSectorLieSection"; Args = 2; Note = "伪证下拉刷新" }
+    @{ Type = "UI_ClueSubItem";               Method = "FillText";               Args = 1; Note = "线索卡片：补活动卡面/整句" }
+    @{ Type = "UI_ClueSubItem";               Method = "ClearInfo";              Args = 0; Note = "线索卡片：清掉我们补的那一格" }
+    @{ Type = "UI_ClueSubItem";               Method = "OnEnterClue";            Args = 1; Note = "线索卡片：悬浮换整句视图" }
+    @{ Type = "UI_ClueSubItem";               Method = "OnExitClue";             Args = 1; Note = "线索卡片：离开还原图标视图" }
     @{ Type = "Server.Game.HostPeerSession";  Method = "Send";                    Args = 1; Note = "能力声明时机（客户端出口）" }
     @{ Type = "DummyClient.SteamP2PSession";  Method = "Send";                    Args = 1; Note = "自定义协议改道（P2P 出口）" }
     @{ Type = "DummyClient.ServerSession";    Method = "Send";                   Args = 1; Note = "自定义协议改道（另一条出口）" }
@@ -84,6 +88,10 @@ $members = @(
     @{ Type = "Server.Game.GameRoom";         Member = "SendSabotageMission";   Kind = "M"; Note = "电闸图钉（原版只发黑幕）" }
     @{ Type = "Server.Game.TimeManager";      Member = "PushSurvivalJob";       Kind = "M"; Note = "破坏 10 秒后再发箭头" }
     @{ Type = "Define";                       Member = "MASTERMIND_SABOTAGE_ID"; Kind = "F"; Note = "可调查线索里的黑幕 id（11037）" }
+    @{ Type = "Managers";                     Member = "Resource";      Kind = "P"; Note = "精灵加载入口（活动卡面）" }
+    @{ Type = "ResourceManager";              Member = "Load";          Kind = "M"; Note = "按地址取精灵（活动卡面）" }
+    @{ Type = "Managers";                     Member = "Data";          Kind = "P"; Note = "数据表入口（房间类型 → 卡面名）" }
+    @{ Type = "Data.RoomData";                Member = "Type";          Kind = "F"; Note = "房间类型（卡面名用它拼）" }
 )
 
 $fail = 0
