@@ -46,7 +46,9 @@ namespace ClueDetail.Core
             Log.Info($"自定义协议：已注册 {CdWire.Registered}/{CdOpcode.Count} 条" +
                      (CdWire.Failed > 0 ? $"（失败 {CdWire.Failed}，见上面的错误日志）" : ""));
             Log.Info("未知字段通道：" + ProbeUnknownFields());
-            Log.Info($"本机是房主：{Yes(RoomState.IsHost)}；房主开关：{DescribeRoomState()}");
+            Log.Info($"本机是房主：{Yes(RoomState.IsHost)}" +
+                     $"（HostRuntime {(Managers.Host == null ? "尚未创建 —— 本行跑在进房之前，属正常" : "已就绪")}）；" +
+                     $"房主开关：{DescribeRoomState()}");
 
             int roomId = FindRoomWithActivity();
             if (roomId != 0)

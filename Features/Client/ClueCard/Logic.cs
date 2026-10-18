@@ -544,23 +544,27 @@ namespace ClueDetail.Features.Client.ClueCard
         {
             if (!string.IsNullOrEmpty(room))
             {
-                Sprite byRoom = Load(what + "_" + room + "_card.sprite");
+                // ⚠️ 「活动_房间」这种组合卡面**大多数不存在**（catalog 里只有一小部分是房间特化的，
+                // 例：WShelf_Classroom_card 有、WOperatingDoor_DeconA_card 没有）。
+                // 拿不到是常态，所以这里**静默**回退，别拿它刷日志 —— 只有连通用卡面都没有时才值得报。
+                Sprite byRoom = Load(what + "_" + room + "_card.sprite", quiet: true);
                 if (byRoom != null)
                 {
                     return byRoom;
                 }
             }
 
-            return Load(what + "_card.sprite");
+            return Load(what + "_card.sprite", quiet: false);
         }
 
-        private static Sprite Load(string key)
+        private static Sprite Load(string key, bool quiet)
         {
             Sprite sprite = Managers.Resource.Load<Sprite>(key);
 
             // 预载是按 Addressables 标签整包做的（School / Lobby / Tutorial），
-            // 某个键不在预载集合里就会静默拿到 null —— 记一次，便于判断是"资源没了"还是"没预载"。
-            if (sprite == null && MissingSprites.Add(key))
+            // 某个键不在预载集合里就会静默拿到 null —— 通用卡面拿不到才记一次，
+            // 便于判断是"资源没了"还是"没预载"。
+            if (!quiet && sprite == null && MissingSprites.Add(key))
             {
                 global::ClueDetail.Core.Log.Warn("活动卡面 " + key + " 没能加载（未预载或资源已删），这一格留空。");
             }
