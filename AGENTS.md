@@ -1,4 +1,4 @@
-﻿# ClueDetail 开发规范
+# ClueDetail 开发规范
 
 《Deadly Trick》的**独立** BepInEx 5 插件，用于还原 0.1.18 从线索里移除的「详细活动」。
 
@@ -158,6 +158,11 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 | `Server.Game.Player.IsSpectator` | 29694 | 可写属性（放行时临时置 false） |
 | `Managers.Update` | —— | 补扫调度（每帧一次状态检查） |
 | `Managers.Device.Cache` | —— | 客户端已加载设备（`Info.Bubble == -1` = 可调查） |
+| `UI_ClueSubItem.FillText(ClueManager.Clue)`（private） | 86635 | 线索卡片补「活动卡面 / 整句」的挂点 |
+| `UI_ClueSubItem.ClearInfo()`（private） | 86739 | 无效线索：清掉我们补的那一格 |
+| `UI_ClueSubItem.OnEnterClue` / `.OnExitClue(PointerEventData)`（private） | 86535 / 86545 | 悬浮切「图标视图 / 整句视图」 |
+| `ResourceManager.Load<T>(string)` | 36766 | 按地址取精灵（活动卡面）——**预载命中才拿得到** |
+| `Managers.Data.RoomDic` / `Data.RoomData.Type` | 183077 | 房间类型 → 卡面资源名 |
 | `DummyClient.SteamP2PSession.Send` / `.SendBytes` | 163379 / 163423 | 自定义协议改道 + 裸字节出口（public） |
 | `DummyClient.ServerSession.Send` | 162551 | 同上（另一条出站路径） |
 | `PacketManager.RegisterMake` / `RegisterHandler` | 44876 / 44881 | 注册自定义 opcode（public） |
@@ -205,6 +210,14 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 7. ~~隐蔽破坏点~~ **已做（待实机）**：`Features/Host/ShadowSabotage/` —— 两个伪装成小熊的
    服务端破坏点（科学室的身份识别组件 / 电脑室的时钟记录组件），与电闸共用同一条 60 秒 CD。
    含身份线索污染、时间冻结、断电箭头、黑幕专属电闸图钉、破坏点自身可被调查。**详见 §10。**
+
+8. ~~线索卡片回退旧版 UI~~ **已做（待实机）**：`Features/Client/ClueCard/`。
+   0.1.18 重做了 `UI_ClueSubItem` prefab（见 §12），把旧版的两格删掉了 ——
+   「活动卡面（设备图像）」与「整句文本」，只剩「房间卡 + 房间名 + 分隔线 + 时间」。
+   本功能在运行期补回那两格：活动卡面克隆 `ClueWhereImage`、整句克隆 `ClueWhereText`，
+   悬浮（`OnEnterClue` / `OnExitClue`）时藏起图标组、把整句显示出来。
+   版式（各栏位置与宽度）**全部是配置项**（段 `[ClueCard]`），改 `.cfg` 就能调，不必重编。
+   ⚠️ 伪证行（`Statement*`）也一并支持，但它的版式是**按空档自动排**的（没有配置项）。
 
 ## 7. 过程材料
 
@@ -475,3 +488,53 @@ bool belongs = t.IsNested
 
 **唯一可靠的判据是启动日志里的 `补丁 N 个`**：**N 必须大于 0**。
 `失败 0` 只说明没抛异常，**不代表补丁挂上了** —— 这两件事必须分开看。
+
+## 12. 资源与 prefab：bundle 的坑（2026-10-18）
+
+⚠️ **同一个资源地址可能在多个 bundle 里各有一份，只有 `catalog.bin` 指向的那份会被加载。**
+
+实测：`Assets/@Resources/Prefabs/UI/SubItem/UI_ClueSubItem.prefab` 同时存在于
+- `common_prefab_assets_all_4253c60d4b003cb4ebd36ee3d5cf745a.bundle`（0.1.18 的，**catalog 指向它**）
+- `ui_assets_all_e5028a3ceeca10ef8bbe2f46f263871c.bundle`（上一版**残留的孤儿**：文件还在、
+  地址表里也自称有这个 prefab，但 `catalog.bin` 里搜不到它的哈希）
+
+⇒ 孤儿那份的节点结构与 0.1.18 的代码枚举**对不上**（它有 `ClueText`，没有 `ClueWhereText`）。
+上一轮会话 dump 的正是它，于是得出了「0.1.18 删了 ClueWhereText / 静态 dump 与运行期事实矛盾」
+这个**错误结论**。
+
+**定位某个 prefab 真正在哪**（`findstr` 对 bundle 里的**压缩**字符串不可靠，别用它下结论）：
+1. `python .tmps\tools\probe-addressables.py <bundle> <关键词>` —— 用 UnityPy 读 bundle 自带的
+   地址表（`env.container`）与 GameObject 名字；
+2. `python .tmps\tools\scan-bundles.py <bundle 目录> <关键词>` —— 遍历全部 bundle 列出命中；
+3. 拿地址去 `catalog.bin` 里搜 bundle 哈希：**不在 = 孤儿，在 = 真身**。这一步最省事、最硬。
+
+**0.1.18 的 `UI_ClueSubItem` 节点真相**（`common_prefab` bundle）：
+
+```text
+UI_ClueSubItem (612x104)
+  MousePanel                    整行射线目标（悬停靠它）
+  Clue                          612x104
+    ClueWho (100x100 @ x=-254)  ClueWhoFrame / ClueWhoMask / ClueWhoImage / ClueWhoText(70x20 @ y=-38)
+    ClueContent (100x100 @ 中心)
+      ClueIconParent
+        ClueIconPanel  (596x88, Image)      整条底图
+        ClueWhereImage (150x80 @ x=-135)    房间卡
+        ClueWhereText  (140x60 @ x=-135)    房间名（与卡同位置，叠在上面）
+        ClueIconLine   (4x80   @ x=-54)     分隔竖线
+        ClueWhenText   (140x60 @ x=+71)     时间
+    PropositionButton (100x80 @ x=244)  SubmitText / SubmitBlockImage
+  Statement                     同构，容器叫 StatementContent/StatementIconParent
+  Selected                      选中框
+```
+
+⇒ 与代码里的 `Texts`（8 项）/ `Images`（6 项）**完全吻合**；
+`ClueText` / `StatementText` / `ClueWhatImage` / `ClueTextParent`（0.1.17a 的旧两视图容器）都不存在。
+
+**活动卡面的精灵还在**：`catalog.bin` 里 146 个 `_card` 地址健在 —— 房间卡 `OperatingRoom_card`
+等，活动卡 `WComputer_card` 等，还有 `WShelf_Classroom_card` 这种「活动_房间」组合。
+官方只是**不再用它**，资源没删。
+
+⚠️ 取用走 `Managers.Resource.Load<Sprite>("键.sprite")`（:36766），它是**查预载字典**，
+不是按需加载：预载按 Addressables 标签整包做（`School` / `Lobby` / `Tutorial`，:94647 / :94651），
+**没预载的键会静默拿到 null**。所以「拿不到卡面」有两种原因（资源删了 / 没预载），
+`ClueCard` 对每个缺失的键只记一条 Warn，便于区分。

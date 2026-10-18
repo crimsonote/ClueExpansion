@@ -7,13 +7,19 @@ namespace ClueDetail.Features.Client.ClueRender
     /// 客户端侧：把「详细活动」拼回线索句式。
     /// </summary>
     /// <remarks>
-    /// 0.1.18 三处同时移除了这一段：协议字段（WhatType）、句子模板（<c>PropositionSentence*</c>
-    /// 去掉了 <c>{what}</c>）、以及语言表里的 46 条 <c>W*</c> 词条。
+    /// 0.1.18 移除了这一段的数据来源：协议字段（<c>PropositionInfo.WhatType</c>）与语言表里的
+    /// 46 条 <c>W*</c> 词条。⚠️ **句子模板里的 <c>{what}</c> 并没有删**（2026-10-18 更正：
+    /// 早前记成"模板去掉了 {what}"是错的）—— <c>Util.FormatProposition</c>（:27343）的
+    /// <c>case "what"</c> 分支仍在，只是内容降级成了角色级两选一
+    /// <c>GetRoleWhatKey(playerId)</c>（:27517 / :27379）。所以本功能做的是**替换**那一段，
+    /// 而不是往句子里再插一段（见 <see cref="ClueWhat.TryDecorate"/>）。
+    /// <para>
     /// 本功能负责后两者在客户端的还原：
     /// <list type="bullet">
     /// <item>语言表：把 46 条词条注入回 <c>Managers.Data.TextDic</c>（只补缺失键，不覆盖原版）；</item>
-    /// <item>句子：在 <c>Util.FormatProposition</c> 的结果里把活动插回句末标点之前。</item>
+    /// <item>句子：把 <c>Util.FormatProposition</c> 结果里 FF97AB 色号那一段换成真实活动。</item>
     /// </list>
+    /// </para>
     /// <para>
     /// 详细活动的来源有两级：优先读服务端经 protobuf 未知字段下发的值；
     /// 房主未装本模块时退化为客户端自采集的「线索 → 设备」关联（<see cref="ActivityMap"/>）。
