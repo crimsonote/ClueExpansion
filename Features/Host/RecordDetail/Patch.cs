@@ -9,7 +9,7 @@ using ServerTimeManager = Server.Game.TimeManager;
 
 namespace ClueDetail.Features.Host.RecordDetail
 {
-    internal static partial class RecordDetailFeature
+    internal partial class RecordDetailFeature
     {
         /// <summary>
         /// 线索写入时记下"这台设备的详细活动"。
@@ -25,6 +25,7 @@ namespace ClueDetail.Features.Host.RecordDetail
         {
             private static void Prefix(ServerDevice __instance, GamePlayer player, Define.EWhatState state)
             {
+                if (!FeatureLoader.Enabled<RecordDetailFeature>()) return;
                 if (__instance == null || player == null || __instance.DeviceData == null)
                 {
                     return;
@@ -77,6 +78,7 @@ namespace ClueDetail.Features.Host.RecordDetail
         {
             private static void Prefix(ServerDevice __instance)
             {
+                if (!FeatureLoader.Enabled<RecordDetailFeature>()) return;
                 if (__instance == null || !RoomState.HostBroadcast)
                 {
                     return;
@@ -120,6 +122,7 @@ namespace ClueDetail.Features.Host.RecordDetail
         {
             private static void Prefix(IMessage packet)
             {
+                if (!FeatureLoader.Enabled<RecordDetailFeature>()) return;
                 if (!(packet is S_ADD_CLUE add) || add.Info == null || !RoomState.HostBroadcast)
                 {
                     return;

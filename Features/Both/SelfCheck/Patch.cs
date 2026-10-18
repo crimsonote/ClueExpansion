@@ -3,7 +3,7 @@ using HarmonyLib;
 
 namespace ClueDetail.Features.Both.SelfCheck
 {
-    internal static partial class SelfCheckFeature
+    internal partial class SelfCheckFeature
     {
         /// <summary>数据表就绪后输出一次诊断（<see cref="Diagnostics.ReportOnce"/> 自己保证只输出一次）。</summary>
         [HarmonyPatch(typeof(Managers), "Update")]
@@ -11,6 +11,7 @@ namespace ClueDetail.Features.Both.SelfCheck
         {
             private static void Postfix()
             {
+                if (!FeatureLoader.Enabled<SelfCheckFeature>()) return;
                 Diagnostics.ReportOnce();
             }
         }

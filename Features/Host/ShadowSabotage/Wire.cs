@@ -6,7 +6,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
     /// <summary>
     /// 破坏点用到的**包构造**：全部集中在这里，编排逻辑只调方法、不碰协议类型。
     /// </summary>
-    internal static partial class ShadowSabotageFeature
+    internal partial class ShadowSabotageFeature
     {
         /// <summary>
         /// 把破坏点伪装成「这个玩家自己的小熊」—— 也就是把 <c>StateList[1]</c> 单发成他的 PlayerId。

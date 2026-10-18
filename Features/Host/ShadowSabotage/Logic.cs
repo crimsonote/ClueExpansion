@@ -15,7 +15,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
     /// 所以换局时会被 <c>DeviceManager.Init()</c> 连带清掉 —— 重建挂在
     /// <c>StartFuseboxSabotage</c> 的 Postfix 上（开局与电闸重派发都会经过那里）。
     /// </remarks>
-    internal static partial class ShadowSabotageFeature
+    internal partial class ShadowSabotageFeature
     {
         // ══════════════════ 时间 ══════════════════
 
@@ -886,7 +886,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
         }
 
         /// <summary>
-        /// 破坏后延迟 <see cref="ShadowSabotageFeature.NotifyDelaySeconds"/> 秒再发箭头。
+        /// 破坏后延迟 <see cref="ShadowSabotageFeature.NotifyDelayValue"/> 秒再发箭头。
         /// </summary>
         /// <remarks>
         /// ⚠ <c>TimeManager.PushSurvivalJob</c> 的回调**不随阶段清空**，

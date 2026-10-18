@@ -19,7 +19,7 @@ namespace ClueDetail.Features.UI.LobbyToggle
         "在大厅「详细设置」的「其它」页加入「线索详细活动」开关（仅房主可改，随房间同步）。只有装了本模块的玩家能看到这一行。",
         defaultEnabled: true,
         side: FeatureSide.Client)]
-    internal static partial class LobbyToggleFeature
+    internal partial class LobbyToggleFeature
     {
         /// <summary>设置页那一行的标题文案（换语言时只改这里）。</summary>
         public static ConfigEntry<string> RowTitle { get; private set; }

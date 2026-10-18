@@ -5,7 +5,7 @@ using GameClueMirror = Server.Game.ClueMirror;
 
 namespace ClueDetail.Features.Client.ClueRender
 {
-    internal static partial class ClueRenderFeature
+    internal partial class ClueRenderFeature
     {
         /// <summary>实际渲染用的命题句（平板线索卡、审判提案等走这里）。</summary>
         [HarmonyPatch(typeof(Util), nameof(Util.FormatProposition))]
@@ -13,6 +13,7 @@ namespace ClueDetail.Features.Client.ClueRender
         {
             private static void Postfix(ClueManager.Clue clue, ref string __result)
             {
+                if (!FeatureLoader.Enabled<ClueRenderFeature>()) return;
                 if (clue != null && ClueWhat.TryDecorate(__result, clue, out string decorated))
                 {
                     __result = decorated;
@@ -26,6 +27,7 @@ namespace ClueDetail.Features.Client.ClueRender
         {
             private static void Postfix(ClueManager.Clue clue, ref string __result)
             {
+                if (!FeatureLoader.Enabled<ClueRenderFeature>()) return;
                 if (clue != null && ClueWhat.TryDecorate(__result, clue, out string decorated))
                 {
                     __result = decorated;
@@ -56,6 +58,7 @@ namespace ClueDetail.Features.Client.ClueRender
         {
             private static void Prefix(int deviceId, PropositionInfo info)
             {
+                if (!FeatureLoader.Enabled<ClueRenderFeature>()) return;
                 if (info != null)
                 {
                     ActivityMap.Remember(info.PlayerId, info.Time, info.RoomId, deviceId);
@@ -74,6 +77,7 @@ namespace ClueDetail.Features.Client.ClueRender
         {
             private static void Prefix(DeviceBase __instance)
             {
+                if (!FeatureLoader.Enabled<ClueRenderFeature>()) return;
                 if (__instance != null)
                 {
                     ActivityMap.QueueScan(__instance.ID);
@@ -98,6 +102,7 @@ namespace ClueDetail.Features.Client.ClueRender
         {
             private static void Postfix(S_SCAN_DEVICE pkt)
             {
+                if (!FeatureLoader.Enabled<ClueRenderFeature>()) return;
                 if (pkt == null || pkt.InfoList == null)
                 {
                     return;

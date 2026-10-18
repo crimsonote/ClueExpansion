@@ -5,7 +5,7 @@ using Server.Game;
 
 namespace ClueDetail.Features.Host.SecondVote
 {
-    internal static partial class SecondVoteFeature
+    internal partial class SecondVoteFeature
     {
         /// <summary>
         /// 审判阶段切换的唯一收口（<c>State</c> 的 setter 内部就是 <c>ChangeTrialState</c>，:181888）。
@@ -24,6 +24,7 @@ namespace ClueDetail.Features.Host.SecondVote
         {
             private static void Prefix(TrialManager __instance, ref ETrialState value)
             {
+                if (!FeatureLoader.Enabled<SecondVoteFeature>()) return;
                 if (value == ETrialState.Discuss)
                 {
                     SecondVoteRule.Reset();
@@ -60,6 +61,7 @@ namespace ClueDetail.Features.Host.SecondVote
         {
             private static bool Prefix(int voteId)
             {
+                if (!FeatureLoader.Enabled<SecondVoteFeature>()) return true;
                 if (!SecondVoteRule.IsBanned(voteId))
                 {
                     return true;

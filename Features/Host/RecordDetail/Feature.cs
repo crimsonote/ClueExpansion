@@ -27,7 +27,7 @@ namespace ClueDetail.Features.Host.RecordDetail
         "房主侧：线索写入时记录详细活动（设备动作），并经本模块自有协议下发给全房，供装了本模块的客户端还原旧版「…于{地点}{活动}」句式；同时下发本开关状态让客户端跟随。未装本模块的客户端会静默忽略这些包，行为与原版一致。",
         defaultEnabled: true,
         side: FeatureSide.Host)]
-    internal static partial class RecordDetailFeature
+    internal partial class RecordDetailFeature
     {
         /// <summary>房间级开关：是否下发详细活动。关闭后装了本模块的客户端也会跟着不显示。</summary>
         public static ConfigEntry<bool> BroadcastDetail { get; private set; }

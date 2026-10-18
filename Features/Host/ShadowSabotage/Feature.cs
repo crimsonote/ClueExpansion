@@ -35,7 +35,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
         "时钟记录组件被破坏期间，新线索的时间冻结在破坏那一刻（不影响报告里的死亡时间）。",
         defaultEnabled: true,
         side: FeatureSide.Host)]
-    internal static partial class ShadowSabotageFeature
+    internal partial class ShadowSabotageFeature
     {
         // ══════════════════ 配置 ══════════════════
 
@@ -56,15 +56,6 @@ namespace ClueDetail.Features.Host.ShadowSabotage
 
         /// <summary>假主人的进入半径（游戏单位）。进来才发，出去要更远（滞回）。</summary>
         public static ConfigEntry<float> InteractRadius { get; private set; }
-
-        /// <summary>假主人的离开半径（游戏单位），必须大于进入半径。</summary>
-        public static ConfigEntry<float> ExitRadius { get; private set; }
-
-        /// <summary>范围内重发假主人的间隔（秒），用来兜底丢包与入场动画期。</summary>
-        public static ConfigEntry<float> OwnerResendSeconds { get; private set; }
-
-        /// <summary>破坏发生后延迟多久给所有存活者发断电箭头（秒）。</summary>
-        public static ConfigEntry<float> NotifyDelaySeconds { get; private set; }
 
         public static void Bind(ConfigFile config, string section)
         {
@@ -105,27 +96,6 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                 "「假主人」的进入半径（游戏单位）。\n" +
                 "服务端只在这个距离内把破坏点伪装成该玩家的专属小熊，客户端才会出现按 E 提示。\n" +
                 "原版小熊自身的交互框是 150×150（±75），所以这里默认 120 比客户端判定更宽松。");
-
-            ExitRadius = config.Bind(
-                section,
-                "ExitRadius",
-                160f,
-                "「假主人」的离开半径（游戏单位），必须大于进入半径。\n" +
-                "进 120 / 出 160 的滞回是为了避免玩家站在边界上时提示反复闪烁。");
-
-            OwnerResendSeconds = config.Bind(
-                section,
-                "OwnerResendSeconds",
-                1.5f,
-                "范围内重发「假主人」的最小间隔（秒）。用来兜底丢包，以及小熊入场动画期" +
-                "（约 1.5 秒内客户端不显示交互提示）的饥饿。");
-
-            NotifyDelaySeconds = config.Bind(
-                section,
-                "NotifyDelaySeconds",
-                10f,
-                "破坏发生后延迟多少秒，才给所有存活者发指向破坏点的断电箭头。\n" +
-                "刻意不发任何文字通知：只给箭头。");
         }
 
         // ══════════════════ 生命周期 ══════════════════
@@ -144,7 +114,8 @@ namespace ClueDetail.Features.Host.ShadowSabotage
         internal static float ClockX => PosClockX != null ? PosClockX.Value : 9561f;
         internal static float ClockY => PosClockY != null ? PosClockY.Value : 3430f;
         internal static float BreakSecondsValue => PosBreakSeconds;
-        internal static float NotifyDelayValue => NotifyDelaySeconds != null ? NotifyDelaySeconds.Value : 10f;
+        /// <summary>破坏后延迟多久发箭头（秒）。需求口径就是 10 秒，不给配置项。</summary>
+        internal const float NotifyDelayValue = 10f;
 
         private static float PosBreakSeconds
         {
@@ -164,28 +135,25 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             }
         }
 
+        /// <summary>
+        /// 「假主人」的**离开**半径（平方）：固定为进入半径的 4/3。
+        /// </summary>
+        /// <remarks>
+        /// 滞回只是为了避免玩家站在边界上时提示反复闪烁 —— 它是内部节拍，不是手感参数，
+        /// 所以刻意不给它单独的配置项（少一个会被调歪的键）。
+        /// </remarks>
         internal static float ExitRadiusSq
         {
             get
             {
                 float enter = InteractRadius != null ? InteractRadius.Value : 120f;
-                float r = ExitRadius != null ? ExitRadius.Value : enter * 4f / 3f;
-                if (r < enter)
-                {
-                    r = enter;
-                }
+                float r = enter * 4f / 3f;
                 return r * r;
             }
         }
 
-        internal static float ResendSeconds
-        {
-            get
-            {
-                float v = OwnerResendSeconds != null ? OwnerResendSeconds.Value : 1.5f;
-                return v < 0.2f ? 0.2f : v;
-            }
-        }
+        /// <summary>范围内重发「假主人」的间隔（秒）：兜底丢包与入场动画期，属内部节拍。</summary>
+        internal const float ResendSeconds = 1.5f;
 
         // ══════════════════ 常量 ══════════════════
 

@@ -13,7 +13,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
     /// <summary>
     /// 隐蔽破坏点的全部 Harmony 挂点。补丁类必须是 Feature 的**直接**嵌套类型（只扫一层）。
     /// </summary>
-    internal static partial class ShadowSabotageFeature
+    internal partial class ShadowSabotageFeature
     {
         /// <summary>
         /// 「新一轮可破坏窗口开启」= 原版电闸 CD 到点的信号。
@@ -30,6 +30,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             [HarmonyPostfix]
             private static void Postfix()
             {
+                if (!FeatureLoader.Enabled<ShadowSabotageFeature>()) return;
                 try
                 {
                     OnWindowStart();
@@ -53,6 +54,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             [HarmonyPostfix]
             private static void Postfix()
             {
+                if (!FeatureLoader.Enabled<ShadowSabotageFeature>()) return;
                 try
                 {
                     Tick();
@@ -79,6 +81,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             [HarmonyPrefix]
             private static bool Prefix(ServerGamePlayer player)
             {
+                if (!FeatureLoader.Enabled<ShadowSabotageFeature>()) return true;
                 if (player == null || player.PublicInfo == null)
                 {
                     return true;
@@ -108,6 +111,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             [HarmonyPrefix]
             private static bool Prefix(ServerGamePlayer player)
             {
+                if (!FeatureLoader.Enabled<ShadowSabotageFeature>()) return true;
                 if (player == null || player.PublicInfo == null)
                 {
                     return true;
@@ -134,6 +138,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             [HarmonyPostfix]
             private static void Postfix(EGameState state)
             {
+                if (!FeatureLoader.Enabled<ShadowSabotageFeature>()) return;
                 if (state == EGameState.Survive)
                 {
                     return;
@@ -192,6 +197,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             [HarmonyPrefix]
             private static void Prefix(ref Define.EWhatState state)
             {
+                if (!FeatureLoader.Enabled<ShadowSabotageFeature>()) return;
                 if (state != Define.EWhatState.Normal)
                 {
                     return;                 // 角色线索豁免
@@ -233,6 +239,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             [HarmonyPrefix]
             private static void Prefix(IMessage packet)
             {
+                if (!FeatureLoader.Enabled<ShadowSabotageFeature>()) return;
                 if (!TimePollutionOn)
                 {
                     return;
@@ -276,6 +283,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             [HarmonyPrefix]
             private static bool Prefix(ServerDevice __instance, ServerGamePlayer player)
             {
+                if (!FeatureLoader.Enabled<ShadowSabotageFeature>()) return true;
                 if (!TimePollutionOn || __instance == null)
                 {
                     return true;

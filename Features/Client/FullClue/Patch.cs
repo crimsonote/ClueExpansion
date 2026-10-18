@@ -1,8 +1,9 @@
-﻿using HarmonyLib;
+﻿using ClueDetail.Core;
+using HarmonyLib;
 
 namespace ClueDetail.Features.Client.FullClue
 {
-    internal static partial class FullClueFeature
+    internal partial class FullClueFeature
     {
         /// <summary>
         /// 每帧一次状态检查（很轻：一个 State 比较 + 一个布尔判断），
@@ -13,6 +14,7 @@ namespace ClueDetail.Features.Client.FullClue
         {
             private static void Postfix()
             {
+                if (!FeatureLoader.Enabled<FullClueFeature>()) return;
                 FullClueScan.Tick();
             }
         }

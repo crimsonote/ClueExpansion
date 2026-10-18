@@ -1,9 +1,10 @@
-﻿using Data;
+﻿using ClueDetail.Core;
+using Data;
 using HarmonyLib;
 
 namespace ClueDetail.Features.Client.LieWhat
 {
-    internal static partial class LieWhatFeature
+    internal partial class LieWhatFeature
     {
         /// <summary>
         /// 平板初始化后补建下拉。
@@ -17,6 +18,7 @@ namespace ClueDetail.Features.Client.LieWhat
         {
             private static void Postfix(UI_GameTablet __instance, bool __result)
             {
+                if (!FeatureLoader.Enabled<LieWhatFeature>()) return;
                 if (__result)
                 {
                     LieWhatDropdown.Build(__instance);
@@ -36,6 +38,7 @@ namespace ClueDetail.Features.Client.LieWhat
         {
             private static void Postfix(UI_GameTablet __instance, RoomData data)
             {
+                if (!FeatureLoader.Enabled<LieWhatFeature>()) return;
                 LieWhatDropdown.Refresh(__instance, data);
             }
         }

@@ -25,7 +25,7 @@ namespace ClueDetail.Features.Client.LieWhat
         "伪证界面还原旧版的「详细活动」下拉：选项取该房间已有的活动，选中后随伪证一起下发（未装本模块的客户端忽略该字段，行为与原版一致）。",
         defaultEnabled: true,
         side: FeatureSide.Client)]
-    internal static partial class LieWhatFeature
+    internal partial class LieWhatFeature
     {
         /// <summary>
         /// 热关闭：撤掉伪证页里那个下拉。

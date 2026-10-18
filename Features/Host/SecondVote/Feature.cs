@@ -24,7 +24,7 @@ namespace ClueDetail.Features.Host.SecondVote
         "黑幕二次投票：第一次投票若投出黑幕，则不作终局结算，把黑幕标为本轮不可投并立即重开一轮投票（不重开讨论）。第二轮按原版规则结算：投出黑方则白方胜，其余（含平票、无人投票、投出普通人）黑方胜。其余情况一律与原版一致。",
         defaultEnabled: true,
         side: FeatureSide.Host)]
-    internal static partial class SecondVoteFeature
+    internal partial class SecondVoteFeature
     {
         /// <summary>每次加载清零状态（真正的重置在每轮审判开始时的 <c>Discuss</c> 上）。</summary>
         public static void OnLoaded()

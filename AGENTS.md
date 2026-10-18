@@ -61,7 +61,11 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
   两者是**同一个 partial 类**，Harmony 的 `PatchAll` 能扫到另一个文件里的嵌套补丁类。
 - `FeatureLoader` 自动：绑段开关 `[Section] Enabled` → 调用可选的 `static void Bind(ConfigFile, string)`
   → 启用则 `PatchAll`。**功能代码里禁止手写 `Config.Bind`。**
-- **开关全是热的**（2026-10-18 起：改 `.cfg` 不用重启游戏）——见 §11。有状态副作用的补丁**必须**实现 `OnDisabled` 收拾干净。
+- **开关全是热的**（2026-10-18 起：改 `.cfg` 不用重启游戏）——见 §11。三条配套约定：
+  ① 每个补丁的**第一行**必须写 `if (!FeatureLoader.Enabled<XxxFeature>()) return;`
+  （返回 bool 的 Prefix 写 `return true;` —— 放行原方法）；
+  ② 有状态副作用的必须实现 `OnDisabled` 收拾干净；
+  ③ **功能类写 `internal partial class`，不能加 `static`** —— 它要给 `Enabled<T>()` 当类型参数（见 §11.4）。
 - ⚠️ **补丁嵌套只扫一层**：补丁类必须是 Feature 的**直接**嵌套类型，不能套两层。
 - `Plugin.cs` 只组装，不含玩法逻辑。
 
@@ -333,9 +337,9 @@ csproj **不引用**它的程序集，拿不到就只记一行提示。
 | `PosClockX/Y` | 9561 / 3430 | 时钟记录组件坐标 |
 | `BreakSeconds` | 5 | 进度条推满所需秒数（破坏与修复共用） |
 | `InteractRadius` | 120 | 假主人**进入**半径（原版小熊交互框是 ±75，所以 120 更宽松） |
-| `ExitRadius` | 160 | 假主人**离开**半径（滞回，避免边界闪烁） |
-| `OwnerResendSeconds` | 1.5 | 范围内重发间隔（兜底入场动画期的饥饿） |
-| `NotifyDelaySeconds` | 10 | 破坏后延迟多久发箭头 |
+
+**刻意不给配置项的三个**（都是实现细节，写死更不容易被调歪）：离开半径 = 进入半径 × 4/3（滞回）、
+范围内重发间隔 = 1.5 秒、破坏后发箭头的延迟 = 10 秒。
 
 ### 10.4 未实机验证（交给使用者在游戏里过一遍）
 
@@ -347,37 +351,56 @@ csproj **不引用**它的程序集，拿不到就只记一行提示。
 5. 时间污染期间客户端线索按 `Time` 排序会不稳定（同批线索时间相同，原版 `Clue.CompareTo`
    用的是 `Time`）—— 已知且可接受。
 
-## 11. 开关体系（2026-10-18 起：全部热更新）
+## 11. 开关体系（2026-10-18 起：全部热更新，空转式）
 
 三个层次，**改完立刻生效，不用重启游戏**：
 
 | 层次 | 键 | 粒度 |
 | --- | --- | --- |
-| 总开关 | `[ClueDetail] Enabled` | 一次挂 / 卸**全部**功能 |
-| 段开关 | `[<段名>] Enabled` | 单个功能（补丁真挂 / 真卸） |
+| 总开关 | `[ClueDetail] Enabled` | 一次停用**全部**功能 |
+| 段开关 | `[<段名>] Enabled` | 单个功能 |
 | 子配置 | 各功能自己的键 | 每次读 `ConfigEntry.Value` |
 
-### 11.1 怎么实现的（`Core/FeatureLoader.cs`）
+### 11.1 空转式（与 DT_Tools 的 `Engine.Enabled<T>()` 同款）
 
-1. **每个功能一个独立 Harmony 实例**（id = `ClueDetail:<段名>`）——
-   共用一个实例时 `UnpatchSelf()` 只能全卸，做不到按功能卸载。
-2. `SettingChanged` **只置标记**：它可能在**任意线程**触发 ——
-   DT_Tools 的 CONFIG 页就是走 `/api/config/update` 的 HTTP 线程写配置的，
-   在那种线程里 `PatchAll` / `UnpatchSelf` 会去改方法的 IL，不能这么干。
-3. 真正的挂 / 卸在 **Unity 主线程**（`Plugin.Update` → `FeatureLoader.ApplyPending`，
-   没有待办时只花一次 bool 判断）。
-4. 游戏失焦 / 暂停时 Unity 不调 `Update` ⇒ 变更**延迟到恢复运行时**才生效（不是丢失）。
+- **补丁一律挂着**：`FeatureLoader.Load` 对所有功能**无条件 `PatchAll`**，
+  开关只决定**每个补丁入口那行检查**放不放行；
+- `FeatureLoader.Enabled<T>()` **每次都读 `ConfigEntry.Value`** —— 这就是「热」的全部来源，
+  切换时**不碰任何 IL**；
+- ⚠️ 曾用「卸载式」（每功能一个 Harmony 实例 + `UnpatchSelf()`）实现过同一效果，
+  **已放弃**：功能等价，但要多一套机制，而 DT_Tools 用空转式早就跑通了同样的语义
+  （它的 `Mount` 也是无条件 `PatchAll`，`EnabledOf` 也是每次读值）。
+- 代价：**入口检查必须写全** —— 漏一处就是「关了还生效」。
 
-### 11.2 生命周期约定
+### 11.2 入口检查（硬要求，本项目共 28 处）
 
-全部可选、全部 `static` 无参，由 `FeatureLoader` 反射调用：
+```csharp
+private static void Postfix(...)
+{
+    if (!FeatureLoader.Enabled<RecordDetailFeature>()) return;
+    ...
+}
+
+private static bool Prefix(...)        // ⚠️ 返回 bool 的
+{
+    if (!FeatureLoader.Enabled<CdProtocolFeature>()) return true;   // ✅ 放行原方法
+    //                                 return false;  ← ❌ 会把原版行为一起拦掉
+    ...
+}
+```
+
+⚠️ **返回 `false` 整替原方法的钩子尤其要写对**，写错就是弄坏原版。本项目有五处这种：
+`Device.Scan` 的时间污染、`CdProtocol` 的两条出站改道、`SpectatorScan` 的旁观者放行、
+`ItemManager` 的拦丢弃与拦拾取。
+
+### 11.3 生命周期与状态收尾
 
 | 回调 | 时机 | 要点 |
 | --- | --- | --- |
 | `Bind(ConfigFile, string)` | 启动时一次 | **与开关状态无关**（热开时配置已经就位） |
 | `OnLoaded()` | 启动时一次 | 同上，放一次性初始化 |
-| `OnEnabled()` | 补丁挂上**之后** | 重建被 `OnDisabled` 撤掉的东西 |
-| `OnDisabled()` | 补丁卸下**之前** | ⚠️ **有副作用的必须写** |
+| `OnEnabled()` | 「关 → 开」翻转时 | 重建被 `OnDisabled` 撤掉的东西 |
+| `OnDisabled()` | 「开 → 关」翻转时 | ⚠️ **有副作用的必须写** |
 
 ⚠️ **`OnDisabled` 铁律**：只关不收拾会留下「看得见但没反应」的东西。已经踩过的三类：
 
@@ -385,17 +408,37 @@ csproj **不引用**它的程序集，拿不到就只记一行提示。
 - 破坏点的小熊还站在地图上，而且「假主人」提示还挂在客户端；
 - `CdHello` 的「本次连接已声明过」标记没清 —— 热开之后服务端就不知道谁装了模块。
 
-### 11.3 子配置也可能不热（易漏）
+⚠️ 这些回调由 **Unity 主线程**调（`Plugin.Update` → `ApplyPending`）：`SettingChanged` 可能在
+**任意线程**触发（DT_Tools 的 CONFIG 页就是走 HTTP 线程写配置），而回调普遍要碰 Unity API。
+DT_Tools 用 `CoroutineHost.Post` 是同一个理由。
+
+⚠️ 有些副作用**不在接管范围内**，只能自己收拾：已排上队的 `PushSurvivalJob` / `PushAfter` 回调
+（关掉开关它们照样到点执行 ⇒ 回调第一句必须自校验）、已经注册进 `PacketManager` 的自定义 opcode
+（没有反注册 API）、已经写进 `ClueList` / `TextDic` 的数据。
+
+### 11.4 ⚠️ 功能类不能是 `static`
+
+`FeatureLoader.Enabled<T>()` 是泛型，而 **C# 不允许 `static` 类作类型参数**（CS0718）：
+
+```csharp
+internal partial class XxxFeature          // ✅
+// internal static partial class ...       // ❌ CS0718（2026-10-18 实际编译失败过）
+```
+
+成员仍然全部 `static`（与 DT_Tools 的「非 static `sealed class` + 全静态成员」是同一写法）。
+partial 的**每一份声明**都要写一致。
+
+### 11.5 子配置也可能不热（易漏）
 
 `ConfigEntry.Value` 是热读的，但**用它算出来的东西不一定是**。两个实际例子：
 
 - `LobbyToggle.RowTitle` 原来只在建行时读一次 ⇒ 改标题要重开设置页。
   现在在 `Sync` 里对齐（原版每次刷新设置页都会调，本来就在主线程；
-  **刻意不订阅** `SettingChanged`，理由同 §11.1 第 2 条）。
+  **刻意不订阅** `SettingChanged`，理由同 §11.3 的线程说明）。
 - 破坏点坐标：客户端 `S_MODIFY_DEVICE` **不更新 Pos**（0.1.18 :27850 的 `Modify`），
   光改服务端 `DeviceInfo.Pos` 那只熊不会挪窝 ⇒ 现在每秒校验一次，不一致就移除重建。
 
-### 11.4 怎么确认生效了
+### 11.6 怎么确认生效了
 
 改完开关后看日志（`BepInEx\LogOutput.log`）：
 

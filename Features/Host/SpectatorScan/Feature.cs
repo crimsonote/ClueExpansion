@@ -20,7 +20,7 @@ namespace ClueDetail.Features.Host.SpectatorScan
         "房主侧：放行旁观者的设备扫描请求（原版会挡 IsSpectator）。放行后旁观者也能拿到全部线索并建立线索与设备的关联；房主关闭本模块时自动回到原版行为。",
         defaultEnabled: true,
         side: FeatureSide.Host)]
-    internal static partial class SpectatorScanFeature
+    internal partial class SpectatorScanFeature
     {
     }
 }

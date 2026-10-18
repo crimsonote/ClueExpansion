@@ -1,8 +1,9 @@
-﻿using HarmonyLib;
+﻿using ClueDetail.Core;
+using HarmonyLib;
 
 namespace ClueDetail.Features.UI.LobbyToggle
 {
-    internal static partial class LobbyToggleFeature
+    internal partial class LobbyToggleFeature
     {
         /// <summary>
         /// 建行。弹窗实例被缓存，<c>Init</c> 只成功一次（<c>InitBase._init</c> 守卫），
@@ -13,6 +14,7 @@ namespace ClueDetail.Features.UI.LobbyToggle
         {
             private static void Postfix(UI_LobbyPreset __instance, bool __result)
             {
+                if (!FeatureLoader.Enabled<LobbyToggleFeature>()) return;
                 if (__result)
                 {
                     LobbyToggle.Ensure(__instance);
@@ -26,6 +28,7 @@ namespace ClueDetail.Features.UI.LobbyToggle
         {
             private static void Postfix(UI_LobbyPreset __instance)
             {
+                if (!FeatureLoader.Enabled<LobbyToggleFeature>()) return;
                 LobbyToggle.Sync(__instance);
             }
         }

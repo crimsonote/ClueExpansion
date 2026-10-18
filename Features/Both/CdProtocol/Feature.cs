@@ -25,7 +25,7 @@ namespace ClueDetail.Features.Both.CdProtocol
         "自定义协议：用本模块自有的 opcode 段传递能力声明、房主开关状态与线索详情。原版消息一律走原路径；opcode 取高位段且注册前查占用，撞车不覆盖；未装本模块的一端会静默丢弃这些包。",
         defaultEnabled: true,
         side: FeatureSide.Both)]
-    internal static partial class CdProtocolFeature
+    internal partial class CdProtocolFeature
     {
         /// <summary>注册收发（由 FeatureLoader 在挂补丁前调用）。</summary>
         public static void OnLoaded()

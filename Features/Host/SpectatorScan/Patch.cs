@@ -5,7 +5,7 @@ using ServerDeviceManager = Server.Game.DeviceManager;
 
 namespace ClueDetail.Features.Host.SpectatorScan
 {
-    internal static partial class SpectatorScanFeature
+    internal partial class SpectatorScanFeature
     {
         /// <summary>
         /// 放行旁观者扫描。Prefix 返回 false 表示"原方法不执行"，由我们调用同一份原版方法。
@@ -18,6 +18,7 @@ namespace ClueDetail.Features.Host.SpectatorScan
         {
             private static bool Prefix(ServerDeviceManager __instance, GamePlayer player, int id)
             {
+                if (!FeatureLoader.Enabled<SpectatorScanFeature>()) return true;
                 if (__instance == null || player == null || !player.IsSpectator)
                 {
                     return true;

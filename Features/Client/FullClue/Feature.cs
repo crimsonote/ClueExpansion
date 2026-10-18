@@ -21,7 +21,7 @@ namespace ClueDetail.Features.Client.FullClue
         "死者 / 旁观者自动获取全部线索：调查阶段对本机可调查的设备逐个补发扫描请求，既补齐线索，也建立线索与设备的关联。",
         defaultEnabled: true,
         side: FeatureSide.Client)]
-    internal static partial class FullClueFeature
+    internal partial class FullClueFeature
     {
     }
 }

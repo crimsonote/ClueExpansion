@@ -25,7 +25,7 @@ namespace ClueDetail.Features.Client.ClueRender
         "客户端侧：把详细活动拼回线索句式（旧版「…于{地点}{活动}。」），并在语言表缺少词条时注入旧版 46 条活动词条；房主未装本模块时，本机扫描会记录线索与设备的关联作为兜底。",
         defaultEnabled: true,
         side: FeatureSide.Client)]
-    internal static partial class ClueRenderFeature
+    internal partial class ClueRenderFeature
     {
         public static void Bind(ConfigFile config, string section)
         {

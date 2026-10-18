@@ -18,7 +18,7 @@ namespace ClueDetail.Features.Both.SelfCheck
         "启动自检：数据表就绪后在日志里输出一次诊断（未知字段通道自证、房主开关状态、按房间推断抽样、UI 建立情况）。只读不改行为。",
         defaultEnabled: true,
         side: FeatureSide.Both)]
-    internal static partial class SelfCheckFeature
+    internal partial class SelfCheckFeature
     {
     }
 }

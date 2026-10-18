@@ -7,7 +7,7 @@ using GameHostPeerSession = Server.Game.HostPeerSession;
 
 namespace ClueDetail.Features.Both.CdProtocol
 {
-    internal static partial class CdProtocolFeature
+    internal partial class CdProtocolFeature
     {
         /// <summary>
         /// P2P 出站口（<c>Managers.Network.GameServer</c> 的运行时实现就是它）：
@@ -18,6 +18,7 @@ namespace ClueDetail.Features.Both.CdProtocol
         {
             private static bool Prefix(SteamP2PSession __instance, IMessage packet)
             {
+                if (!FeatureLoader.Enabled<CdProtocolFeature>()) return true;
                 return !CdWire.TryIntercept(__instance, packet);
             }
         }
@@ -31,6 +32,7 @@ namespace ClueDetail.Features.Both.CdProtocol
         {
             private static bool Prefix(ServerSession __instance, IMessage packet)
             {
+                if (!FeatureLoader.Enabled<CdProtocolFeature>()) return true;
                 return !CdWire.TryIntercept(__instance, packet);
             }
         }
@@ -47,6 +49,7 @@ namespace ClueDetail.Features.Both.CdProtocol
         {
             private static void Prefix(GameHostPeerSession __instance, IMessage packet)
             {
+                if (!FeatureLoader.Enabled<CdProtocolFeature>()) return;
                 if (RoomState.IsHost || packet is CdMessage)
                 {
                     return;
