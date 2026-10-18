@@ -19,9 +19,6 @@ namespace ClueDetail.Core
     /// </remarks>
     internal static class ClueWhat
     {
-        /// <summary>句末标点候选（用于把 {what} 插回句子尾部）。</summary>
-        private static readonly char[] EndPunctuation = { '。', '.', '！', '!', '？', '?' };
-
         public static EWhatType Resolve(ClueManager.Clue clue)
         {
             return TryResolve(clue, out EWhatType what, out _) ? what : EWhatType.WNone;
@@ -107,11 +104,25 @@ namespace ClueDetail.Core
         }
 
         /// <summary>
-        /// 把详细活动拼回句子。位置：句末标点之前（与旧版 "…于{where}{what}。" 一致）。
+        /// 把句子里 <c>{what}</c> 那一段**换成真实活动**（= 还原 0.1.17a 的行为）。
         /// </summary>
         /// <remarks>
-        /// 这是"尽量像旧版"的降级实现：旧版模板把 {what} 放在 {where} 之后，
-        /// 而 0.1.18 的模板已经把 {what} 整段删掉，只能按标点回插。找不到句末标点时直接追加。
+        /// ⚠️ 2026-10-18 修正：本模块最早的实现是「在句末标点前**插入**一段活动」，
+        /// 那是基于一个**错误的前提** —— 以为 0.1.18 把句子模板里的 <c>{what}</c> 删了。
+        /// 实际读 0.1.18 的 <c>Util.FormatProposition</c>（:27343）：<c>{what}</c> 分支**还在**，
+        /// 只是内容从 <c>clue.Info.WhatType.ToString()</c>（每台设备的具体活动，0.1.17a :27332）
+        /// 降级成了 <c>GetRoleWhatKey(clue.Info.PlayerId)</c>（:27517）——
+        /// 一个**角色级的两选一**：黑幕（11037）⇒ <c>WhatCutPower</c>，
+        /// 其余所有人 ⇒ <c>WhatDestroyEvidence</c>。
+        /// <para>
+        /// 所以正确做法是**替换那一段**，而不是再插一段
+        /// （后者会显示成「…在 科学室 销毁了证据 操作了电脑。」）。
+        /// </para>
+        /// <para>
+        /// 定位方式刻意不依赖旧文本：0.1.18 在 <c>{what}</c> 处渲染的一定是
+        /// <c>&lt;#FF97AB&gt;…&lt;/color&gt;</c>，而<b>整句里只会有这一处</b>这个颜色标记，
+        /// 所以按颜色标记替换即可，不需要反射私有的 <c>GetRoleWhatKey</c>。
+        /// </para>
         /// </remarks>
         public static bool TryDecorate(string sentence, ClueManager.Clue clue, out string result)
         {
@@ -132,10 +143,22 @@ namespace ClueDetail.Core
                 return false;
             }
 
-            string decorated = "<#FF97AB>" + text + "</color>";
-            int index = sentence.LastIndexOfAny(EndPunctuation);
-            result = index >= 0 ? sentence.Insert(index, decorated) : sentence + decorated;
+            System.Text.RegularExpressions.Match match = WhatSegment.Match(sentence);
+            if (!match.Success)
+            {
+                return false;
+            }
+
+            result = sentence.Substring(0, match.Index)
+                     + "<#FF97AB>" + text + "</color>"
+                     + sentence.Substring(match.Index + match.Length);
             return true;
         }
+
+        /// <summary>
+        /// <c>{what}</c> 在渲染结果里的样子（0.1.18 的固定色号）。
+        /// </summary>
+        private static readonly System.Text.RegularExpressions.Regex WhatSegment =
+            new System.Text.RegularExpressions.Regex("<#FF97AB>[^<]*</color>");
     }
 }
