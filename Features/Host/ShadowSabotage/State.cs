@@ -56,6 +56,12 @@ namespace ClueDetail.Features.Host.ShadowSabotage
         /// <summary>上次下发给进度条的刻度（变了才发包）。</summary>
         public int LastBar = -1;
 
+        /// <summary>
+        /// 破坏完成的时刻（<c>TimeManager.SurviveTime</c> 秒）。
+        /// 时间污染冻结成的就是它 —— 所以必须在 <see cref="Finish"/> 里、状态翻转的同一刻记下。
+        /// </summary>
+        public int BrokenAt;
+
         /// <summary>断电箭头是否已发（P3）。</summary>
         public bool ArrowSent;
 
@@ -124,6 +130,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             state.LastBar = -1;
             state.ArrowSent = false;
             state.ClueInjected = false;
+            state.BrokenAt = 0;
             state.Faked.Clear();
             state.LastResend.Clear();
         }

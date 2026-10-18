@@ -515,6 +515,10 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             {
                 // 与电闸共用：破坏之后本轮不再可用，要等下一次重派发。
                 state.CanBreak = false;
+
+                // 时间污染要冻结的就是「破坏完成的那一刻」，必须在状态翻转处同步记下。
+                var tm = ServerTimeManager.Instance;
+                state.BrokenAt = tm != null ? tm.SurviveTime : 0;
             }
 
             SetSlot0(device, state.Broken ? 2 : 0);
@@ -658,6 +662,82 @@ namespace ClueDetail.Features.Host.ShadowSabotage
         /// <param name="wasBroken">翻转前是否已破坏。</param>
         private static void OnStateChanged(BreakerDevice device, BreakerState state, bool wasBroken)
         {
+            if (!wasBroken && state.Broken)
+            {
+                global::ClueDetail.Core.Log.Info(
+                    $"破坏点[{KindName(state)}] 破坏生效：{PollutionSummary()}");
+            }
+            else if (wasBroken && !state.Broken)
+            {
+                global::ClueDetail.Core.Log.Info(
+                    $"破坏点[{KindName(state)}] 已修复：{PollutionSummary()}");
+            }
+        }
+
+        private static string PollutionSummary()
+        {
+            return $"身份污染={(IdentifyPollutionOn ? "开" : "关")}，时间污染={(TimePollutionOn ? "开" : "关")}" +
+                   $"{(TimePollutionOn ? $"（冻结在 {FrozenTime} 秒）" : string.Empty)}。";
+        }
+
+        // ══════════════════ 线索污染的生效判定（P2） ══════════════════
+
+        /// <summary>
+        /// 身份识别组件是否正在污染线索身份 —— 破坏期间新写入的线索一律记成「某人」。
+        /// </summary>
+        /// <remarks>
+        /// 条件：**已破坏** 且仍在本局的 Survive 阶段。
+        /// <para>
+        /// 阶段判定不能省：设备与 <see cref="BreakerState.Broken"/> 会一直留到调查阶段
+        /// （那是刻意的，为了让破坏点本身可被扫描），但调查阶段本来就不再产生新线索，
+        /// 也不该再改写任何东西。
+        /// </para>
+        /// </remarks>
+        internal static bool IdentifyPollutionOn
+        {
+            get
+            {
+                if (!BreakerStates.Identify.Broken)
+                {
+                    return false;
+                }
+
+                var room = ServerGameRoom.Instance;
+                return room != null && room.State == EGameState.Survive;
+            }
+        }
+
+        /// <summary>时钟记录组件是否正在冻结线索时间。</summary>
+        internal static bool TimePollutionOn
+        {
+            get
+            {
+                if (!BreakerStates.Clock.Broken)
+                {
+                    return false;
+                }
+
+                var room = ServerGameRoom.Instance;
+                return room != null && room.State == EGameState.Survive;
+            }
+        }
+
+        /// <summary>
+        /// 时钟被破坏的时刻（<c>TimeManager.SurviveTime</c> 秒）。
+        /// 时间污染把所有新线索的 <c>PropositionInfo.Time</c> 都改写成它。
+        /// </summary>
+        internal static int FrozenTime
+        {
+            get { return BreakerStates.Clock.BrokenAt; }
+        }
+
+        /// <summary>把时间污染施加到一条要发出去的线索上（只改副本，不动服务端权威对象）。</summary>
+        internal static void ApplyFrozenTime(Protocol.PropositionInfo info)
+        {
+            if (info != null && TimePollutionOn)
+            {
+                info.Time = FrozenTime;
+            }
         }
     }
 }
