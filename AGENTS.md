@@ -61,6 +61,7 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
   两者是**同一个 partial 类**，Harmony 的 `PatchAll` 能扫到另一个文件里的嵌套补丁类。
 - `FeatureLoader` 自动：绑段开关 `[Section] Enabled` → 调用可选的 `static void Bind(ConfigFile, string)`
   → 启用则 `PatchAll`。**功能代码里禁止手写 `Config.Bind`。**
+- **开关全是热的**（2026-10-18 起：改 `.cfg` 不用重启游戏）——见 §11。有状态副作用的补丁**必须**实现 `OnDisabled` 收拾干净。
 - ⚠️ **补丁嵌套只扫一层**：补丁类必须是 Feature 的**直接**嵌套类型，不能套两层。
 - `Plugin.cs` 只组装，不含玩法逻辑。
 
@@ -345,3 +346,62 @@ csproj **不引用**它的程序集，拿不到就只记一行提示。
 4. 与电闸那 60 秒的联动（电闸重派发时两个点是否恢复可破坏、图钉是否回来）；
 5. 时间污染期间客户端线索按 `Time` 排序会不稳定（同批线索时间相同，原版 `Clue.CompareTo`
    用的是 `Time`）—— 已知且可接受。
+
+## 11. 开关体系（2026-10-18 起：全部热更新）
+
+三个层次，**改完立刻生效，不用重启游戏**：
+
+| 层次 | 键 | 粒度 |
+| --- | --- | --- |
+| 总开关 | `[ClueDetail] Enabled` | 一次挂 / 卸**全部**功能 |
+| 段开关 | `[<段名>] Enabled` | 单个功能（补丁真挂 / 真卸） |
+| 子配置 | 各功能自己的键 | 每次读 `ConfigEntry.Value` |
+
+### 11.1 怎么实现的（`Core/FeatureLoader.cs`）
+
+1. **每个功能一个独立 Harmony 实例**（id = `ClueDetail:<段名>`）——
+   共用一个实例时 `UnpatchSelf()` 只能全卸，做不到按功能卸载。
+2. `SettingChanged` **只置标记**：它可能在**任意线程**触发 ——
+   DT_Tools 的 CONFIG 页就是走 `/api/config/update` 的 HTTP 线程写配置的，
+   在那种线程里 `PatchAll` / `UnpatchSelf` 会去改方法的 IL，不能这么干。
+3. 真正的挂 / 卸在 **Unity 主线程**（`Plugin.Update` → `FeatureLoader.ApplyPending`，
+   没有待办时只花一次 bool 判断）。
+4. 游戏失焦 / 暂停时 Unity 不调 `Update` ⇒ 变更**延迟到恢复运行时**才生效（不是丢失）。
+
+### 11.2 生命周期约定
+
+全部可选、全部 `static` 无参，由 `FeatureLoader` 反射调用：
+
+| 回调 | 时机 | 要点 |
+| --- | --- | --- |
+| `Bind(ConfigFile, string)` | 启动时一次 | **与开关状态无关**（热开时配置已经就位） |
+| `OnLoaded()` | 启动时一次 | 同上，放一次性初始化 |
+| `OnEnabled()` | 补丁挂上**之后** | 重建被 `OnDisabled` 撤掉的东西 |
+| `OnDisabled()` | 补丁卸下**之前** | ⚠️ **有副作用的必须写** |
+
+⚠️ **`OnDisabled` 铁律**：只关不收拾会留下「看得见但没反应」的东西。已经踩过的三类：
+
+- 克隆出来的 UI 控件还在（大厅那一行开关、伪证页的下拉）—— 拨了没反应，反倒像设置坏了；
+- 破坏点的小熊还站在地图上，而且「假主人」提示还挂在客户端；
+- `CdHello` 的「本次连接已声明过」标记没清 —— 热开之后服务端就不知道谁装了模块。
+
+### 11.3 子配置也可能不热（易漏）
+
+`ConfigEntry.Value` 是热读的，但**用它算出来的东西不一定是**。两个实际例子：
+
+- `LobbyToggle.RowTitle` 原来只在建行时读一次 ⇒ 改标题要重开设置页。
+  现在在 `Sync` 里对齐（原版每次刷新设置页都会调，本来就在主线程；
+  **刻意不订阅** `SettingChanged`，理由同 §11.1 第 2 条）。
+- 破坏点坐标：客户端 `S_MODIFY_DEVICE` **不更新 Pos**（0.1.18 :27850 的 `Modify`），
+  光改服务端 `DeviceInfo.Pos` 那只熊不会挪窝 ⇒ 现在每秒校验一次，不一致就移除重建。
+
+### 11.4 怎么确认生效了
+
+改完开关后看日志（`BepInEx\LogOutput.log`）：
+
+```text
+[ClueDetail] 已启用功能 XxxFeature（热更新）。
+[ClueDetail] 已停用功能 XxxFeature（热更新）。
+```
+
+启动那一行仍是 `启用 N，停用 M，失败 K` —— **失败必须为 0**。
