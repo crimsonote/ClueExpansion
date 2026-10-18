@@ -159,6 +159,10 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                 // 广播会把各客户端上的假主人冲掉 ⇒ 立刻按当前距离重算。
                 RefreshFakes(device, state);
 
+                // 可派发时**额外追加**这个点的「电闸」图钉（只发给黑幕）——
+                // 与电闸同一套生命周期：能拆的时候黑幕在地图上看得见，拆掉就撤。
+                SendPin(state, device, true);
+
                 global::ClueDetail.Core.Log.Info($"破坏点[{KindName(state)}] 新一轮可破坏窗口开启（与电闸共用）。");
             }
         }
@@ -664,14 +668,96 @@ namespace ClueDetail.Features.Host.ShadowSabotage
         {
             if (!wasBroken && state.Broken)
             {
+                // ① 撤掉「这个点还能拆」的图钉（CD 中不该有它）。
+                SendPin(state, device, false);
+
+                // ② 延迟发箭头 —— 刻意不发任何文字通知。
+                state.ArrowSent = false;
+                ScheduleArrow(state, device);
+
                 global::ClueDetail.Core.Log.Info(
                     $"破坏点[{KindName(state)}] 破坏生效：{PollutionSummary()}");
+                return;
             }
-            else if (wasBroken && !state.Broken)
+
+            if (wasBroken && !state.Broken)
             {
+                if (state.ArrowSent)
+                {
+                    BroadcastRemoveArrow(device);
+                    state.ArrowSent = false;
+                }
+
+                // 保险：修复后仍在 CD 中，图钉不该在。
+                SendPin(state, device, false);
+
                 global::ClueDetail.Core.Log.Info(
                     $"破坏点[{KindName(state)}] 已修复：{PollutionSummary()}");
             }
+        }
+
+        /// <summary>
+        /// 破坏后延迟 <see cref="ShadowSabotageFeature.NotifyDelaySeconds"/> 秒再发箭头。
+        /// </summary>
+        /// <remarks>
+        /// ⚠ <c>TimeManager.PushSurvivalJob</c> 的回调**不随阶段清空**，
+        /// 所以回调第一句必须自校验（见 <see cref="SendArrow"/>：<c>Broken</c> 与阶段都要查）。
+        /// </remarks>
+        private static void ScheduleArrow(BreakerState state, BreakerDevice device)
+        {
+            int delay = (int)global::System.Math.Round(NotifyDelayValue);
+
+            if (delay <= 0)
+            {
+                SendArrow(state, device);
+                return;
+            }
+
+            var tm = ServerTimeManager.Instance;
+            if (tm == null)
+            {
+                SendArrow(state, device);
+                return;
+            }
+
+            tm.PushSurvivalJob(delay, delegate
+            {
+                try
+                {
+                    SendArrow(state, device);
+                }
+                catch (global::System.Exception ex)
+                {
+                    global::ClueDetail.Core.Log.Exception(ex, "破坏点：延迟发送箭头失败。");
+                }
+            });
+        }
+
+        /// <summary>发箭头（带自校验：已修复 / 已发过 / 已离开 Survive 都不发）。</summary>
+        private static void SendArrow(BreakerState state, BreakerDevice device)
+        {
+            if (state == null || !state.Broken || state.ArrowSent)
+            {
+                return;
+            }
+
+            var room = ServerGameRoom.Instance;
+            if (room == null || room.State != EGameState.Survive)
+            {
+                return;
+            }
+
+            var target = FindDevice(state) ?? device;
+            if (target == null)
+            {
+                return;
+            }
+
+            BroadcastArrow(target);
+            state.ArrowSent = true;
+
+            global::ClueDetail.Core.Log.Info(
+                $"破坏点[{KindName(state)}] 已给所有存活者发出断电箭头（延迟 {NotifyDelayValue:F0} 秒）。");
         }
 
         private static string PollutionSummary()

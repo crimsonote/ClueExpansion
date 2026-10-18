@@ -99,5 +99,109 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                 global::ClueDetail.Core.Log.Warn($"破坏点：状态广播失败（{ex.Message}）。");
             }
         }
+
+        // ══════════════════ P3：箭头与图钉 ══════════════════
+
+        /// <summary>
+        /// 给**所有存活者**发一支指向破坏点的断电箭头。
+        /// </summary>
+        /// <remarks>
+        /// 照抄原版 <c>DeviceManager.BroadcastFuseArrow</c>（0.1.18 :166870）的写法：
+        /// <c>BroadcastAlivePlayers(S_NOTIFY_ARROW{FuseboxArrow, Pos})</c>。
+        /// <para>
+        /// 刻意**不发任何文字通知** —— 只给箭头（需求口径）。
+        /// </para>
+        /// </remarks>
+        internal static void BroadcastArrow(BreakerDevice device)
+        {
+            var room = Server.Game.GameRoom.Instance;
+            if (device == null || device.DeviceInfo == null || device.DeviceInfo.Pos == null)
+            {
+                return;
+            }
+
+            if (room == null)
+            {
+                return;
+            }
+
+            try
+            {
+                room.BroadcastAlivePlayers(new S_NOTIFY_ARROW
+                {
+                    Type = Protocol.EArrowType.FuseboxArrow,
+                    Pos = device.DeviceInfo.Pos.Clone(),
+                });
+            }
+            catch (global::System.Exception ex)
+            {
+                global::ClueDetail.Core.Log.Warn($"破坏点：发送箭头失败（{ex.Message}）。");
+            }
+        }
+
+        /// <summary>撤掉指向破坏点的箭头（修复时、离开 Survive 时）。</summary>
+        internal static void BroadcastRemoveArrow(BreakerDevice device)
+        {
+            var room = Server.Game.GameRoom.Instance;
+            if (device == null || device.DeviceInfo == null || device.DeviceInfo.Pos == null || room == null)
+            {
+                return;
+            }
+
+            try
+            {
+                room.BroadcastAlivePlayers(new S_REMOVE_ARROW
+                {
+                    Type = Protocol.EArrowType.FuseboxArrow,
+                    Pos = device.DeviceInfo.Pos.Clone(),
+                });
+            }
+            catch (global::System.Exception ex)
+            {
+                global::ClueDetail.Core.Log.Warn($"破坏点：撤箭头失败（{ex.Message}）。");
+            }
+        }
+
+        /// <summary>
+        /// 给**黑幕**加 / 撤这个破坏点的「电闸」图钉与平板条目。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// 走原版 <c>GameRoom.SendSabotageMission</c>（0.1.18 :174389）—— 它**只发给
+        /// <c>GameRoom.MasterMind</c>**，正是我们要的口径（其余人在地图上什么都看不到）。
+        /// </para>
+        /// <para>
+        /// 客户端侧（:30968 / :52763）只是把 <c>deviceId</c> 当字典键与条目匹配用，
+        /// 不查任何设备表 ⇒ 传我们的自定义设备 ID 完全安全。
+        /// 而 <c>MissionType = ScFusebox</c> 会让它按电箱的 pin 类型与词条渲染
+        /// —— 这就是「在地图上显示为电箱」。
+        /// </para>
+        /// </remarks>
+        internal static void SendPin(BreakerState state, BreakerDevice device, bool isAdd)
+        {
+            var room = Server.Game.GameRoom.Instance;
+            if (room == null || state == null || device == null || device.DeviceInfo == null)
+            {
+                return;
+            }
+
+            if (device.DeviceInfo.Pos == null)
+            {
+                return;
+            }
+
+            try
+            {
+                room.SendSabotageMission(
+                    Protocol.ESchoolMission.ScFusebox,
+                    state.DeviceId,
+                    device.DeviceInfo.Pos,
+                    isAdd);
+            }
+            catch (global::System.Exception ex)
+            {
+                global::ClueDetail.Core.Log.Warn($"破坏点：图钉{(isAdd ? "添加" : "撤除")}失败（{ex.Message}）。");
+            }
+        }
     }
 }

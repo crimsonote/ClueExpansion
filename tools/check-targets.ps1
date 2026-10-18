@@ -80,6 +80,9 @@ $members = @(
     @{ Type = "Server.Game.TimeManager";      Member = "SurviveTime";    Kind = "P"; Note = "进度与节流的时间基准" }
     @{ Type = "Protocol.DeviceInfo";          Member = "StateList";      Kind = "P"; Note = "0=正常 / 2=已破坏；[1]=假主人" }
     @{ Type = "Server.ObjectUtils";           Member = "GenerateNewId";  Kind = "M"; Note = "进度条汽水的 ObjectId" }
+    @{ Type = "Server.Game.GameRoom";         Member = "BroadcastAlivePlayers"; Kind = "M"; Note = "断电箭头（只发存活者）" }
+    @{ Type = "Server.Game.GameRoom";         Member = "SendSabotageMission";   Kind = "M"; Note = "电闸图钉（原版只发黑幕）" }
+    @{ Type = "Server.Game.TimeManager";      Member = "PushSurvivalJob";       Kind = "M"; Note = "破坏 10 秒后再发箭头" }
 )
 
 $fail = 0

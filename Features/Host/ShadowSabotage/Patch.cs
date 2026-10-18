@@ -146,6 +146,13 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                         var st = BreakerStates.All[i];
                         AbortSession(st);
                         AbortFakes(st);
+
+                        // 箭头不随阶段自动清，离开 Survive 时自己撤掉（否则会留在画面上）。
+                        if (st.ArrowSent)
+                        {
+                            BroadcastRemoveArrow(FindDevice(st));
+                            st.ArrowSent = false;
+                        }
                     }
                 }
                 catch (global::System.Exception ex)
