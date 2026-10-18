@@ -56,7 +56,12 @@ $targets = @(
     @{ Type = "UI_GameTablet";                Method = "OnClickSectorLieSection"; Args = 2; Note = "伪证下拉刷新" }
     @{ Type = "Server.Game.HostPeerSession";  Method = "Send";                    Args = 1; Note = "能力声明时机（客户端出口）" }
     @{ Type = "DummyClient.SteamP2PSession";  Method = "Send";                    Args = 1; Note = "自定义协议改道（P2P 出口）" }
-    @{ Type = "DummyClient.ServerSession";    Method = "Send";                    Args = 1; Note = "自定义协议改道（另一条出口）" }
+    @{ Type = "DummyClient.ServerSession";    Method = "Send";                   Args = 1; Note = "自定义协议改道（另一条出口）" }
+    @{ Type = "Server.Game.DeviceManager";    Method = "StartFuseboxSabotage";   Args = 0; Note = "隐蔽破坏点：与电闸共用的 CD 信号" }
+    @{ Type = "Server.Game.GameRoom";         Method = "SurvivalTick";           Args = 0; Note = "隐蔽破坏点：每秒维护假主人" }
+    @{ Type = "Server.Game.ItemManager";      Method = "DropItem";               Args = 1; Note = "隐蔽破坏点：拦丢弃" }
+    @{ Type = "Server.Game.ItemManager";      Method = "AcquireItem";            Args = 2; Note = "隐蔽破坏点：拦拾取" }
+    @{ Type = "Server.Game.GameRoom";         Method = "ChangeGameState";        Args = 1; Note = "隐蔽破坏点：离开 Survive 收尾" }
 )
 
 # 被引用的成员（非补丁目标，但编译期引用；游戏升级后改名会直接编译失败，这里也顺手核一遍）
@@ -68,6 +73,13 @@ $members = @(
     @{ Type = "ClueManager";                  Member = "ClueList";     Kind = "F"; Note = "线索列表" }
     @{ Type = "UI_GameTablet";                Member = "LieClue";      Kind = "P"; Note = "伪证线索对象" }
     @{ Type = "DummyClient.SteamP2PSession";  Member = "SendBytes";    Kind = "M"; Note = "裸字节出口（public）" }
+    @{ Type = "Server.Game.Device";           Member = "BroadcastState"; Kind = "M"; Note = "破坏点状态广播" }
+    @{ Type = "Server.Game.DeviceManager";    Member = "SpawnDevice";    Kind = "M"; Note = "破坏点创建" }
+    @{ Type = "Server.Game.DeviceManager";    Member = "Objects";        Kind = "P"; Note = "设备表（幂等判重）" }
+    @{ Type = "Server.Game.Player";           Member = "Color";          Kind = "P"; Note = "黑幕判定（未破坏只发黑幕）" }
+    @{ Type = "Server.Game.TimeManager";      Member = "SurviveTime";    Kind = "P"; Note = "进度与节流的时间基准" }
+    @{ Type = "Protocol.DeviceInfo";          Member = "StateList";      Kind = "P"; Note = "0=正常 / 2=已破坏；[1]=假主人" }
+    @{ Type = "Server.ObjectUtils";           Member = "GenerateNewId";  Kind = "M"; Note = "进度条汽水的 ObjectId" }
 )
 
 $fail = 0
