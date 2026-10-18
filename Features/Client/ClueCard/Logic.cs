@@ -52,6 +52,9 @@ namespace ClueDetail.Features.Client.ClueCard
         /// <summary>原版的图标组节点 —— 悬浮显示整句时要临时把它们藏起来。</summary>
         public GameObject[] IconNodes = None;
 
+        /// <summary>图标组各节点在 prefab 里的原始激活状态（取消悬浮时按它恢复）。</summary>
+        public bool[] IconActive;
+
         public RectTransform WhereImage;
 
         public RectTransform WhereText;
@@ -106,12 +109,17 @@ namespace ClueDetail.Features.Client.ClueCard
         /// <summary>补出来的整句文本框节点名。</summary>
         public const string SentenceNodeName = "ClueDetailSentence";
 
-        /// <summary>整句文本框的高度（与 <c>ClueIconPanel</c> 的 88 等高，够放两行）。</summary>
-        private const float SentenceHeight = 88f;
+        /// <summary>整句文本框的高度（= 旧版详情句节点 ClueText 的 100，宽度默认同为 350）。</summary>
+        private const float SentenceHeight = 100f;
+
+        /// <summary>伪证行的整句高度（= 旧版 StatementText 的 70，宽度 355）。</summary>
+        private const float StatementSentenceHeight = 70f;
 
         private static readonly HashSet<string> MissingSprites = new HashSet<string>();
 
         private static bool _warned;
+
+        private static bool _childrenLogged;
 
         private static bool _guessedLogged;
 
@@ -204,6 +212,7 @@ namespace ClueDetail.Features.Client.ClueCard
 
             MissingSprites.Clear();
             _warned = false;
+            _childrenLogged = false;
             _guessedLogged = false;
         }
 
@@ -245,19 +254,6 @@ namespace ClueDetail.Features.Client.ClueCard
             extra.WhenText = whenText as RectTransform;
             extra.Line = line as RectTransform;
 
-            var icons = new List<GameObject>(4)
-            {
-                whereImage.gameObject,
-                whereText.gameObject,
-                whenText.gameObject,
-            };
-            if (line != null)
-            {
-                icons.Add(line.gameObject);
-            }
-
-            extra.IconNodes = icons.ToArray();
-
             GameObject what = UnityEngine.Object.Instantiate(whereImage.gameObject, content);
             what.name = WhatNodeName;
             DisableRaycast(what);
@@ -272,9 +268,58 @@ namespace ClueDetail.Features.Client.ClueCard
             extra.SentenceRect = sentence.GetComponent<RectTransform>();
             sentence.SetActive(false);
 
+            // 图标组 = 内容容器的**全部**子节点（除了我们那个整句文本框）——刻意不写死节点名：
+            // 官方以后再加一格也不用改代码，悬浮时也不会漏掉谁。
+            // （实机反馈过「悬浮时那条分隔条还在」，根因就是当初只枚举了当时认识的那几个名字。）
+            var icons = new List<GameObject>(content.childCount);
+            var actives = new List<bool>(content.childCount);
+            for (int i = 0; i < content.childCount; i++)
+            {
+                GameObject child = content.GetChild(i).gameObject;
+                if (child == sentence)
+                {
+                    continue;
+                }
+
+                icons.Add(child);
+                actives.Add(child.activeSelf);
+            }
+
+            extra.IconNodes = icons.ToArray();
+            extra.IconActive = actives.ToArray();
+
+            LogChildrenOnce(contentName, content);
+
             extra.IsStatement = isStatement;
             extra.Built = true;
             return true;
+        }
+
+        /// <summary>
+        /// 把图标区的子节点名打一次日志。
+        /// </summary>
+        /// <remarks>
+        /// 实机排查「某条线还在 / 某一格不见了」时，这一行能直接给出**运行期**的节点集合
+        /// —— 静态 dump 出来的 prefab 与运行期不一致时（历史上真踩过：dump 到了孤儿 bundle），
+        /// 这是最快的对照。
+        /// </remarks>
+        private static void LogChildrenOnce(string contentName, Transform content)
+        {
+            if (_childrenLogged)
+            {
+                return;
+            }
+
+            _childrenLogged = true;
+            var names = new List<string>(content.childCount);
+            for (int i = 0; i < content.childCount; i++)
+            {
+                GameObject child = content.GetChild(i).gameObject;
+                names.Add(child.name + (child.activeSelf ? string.Empty : "(未激活)"));
+            }
+
+            global::ClueDetail.Core.Log.Info(
+                contentName + " 的图标区节点：" + string.Join(" / ", names.ToArray()));
         }
 
         /// <summary>撤掉补出来的节点，并把原版图标组恢复显示。</summary>
@@ -296,7 +341,8 @@ namespace ClueDetail.Features.Client.ClueCard
                 {
                     if (extra.IconNodes[i] != null)
                     {
-                        extra.IconNodes[i].SetActive(true);
+                        bool wasActive = extra.IconActive == null || i >= extra.IconActive.Length || extra.IconActive[i];
+                        extra.IconNodes[i].SetActive(wasActive);
                     }
                 }
             }
@@ -306,6 +352,7 @@ namespace ClueDetail.Features.Client.ClueCard
             extra.Sentence = null;
             extra.SentenceRect = null;
             extra.IconNodes = new GameObject[0];
+            extra.IconActive = null;
             extra.WhereImage = null;
             extra.WhereText = null;
             extra.WhenText = null;
@@ -371,7 +418,7 @@ namespace ClueDetail.Features.Client.ClueCard
             float whenRight = when.anchoredPosition.x + when.sizeDelta.x * 0.5f;
             float center = (whereLeft + whenRight) * 0.5f;
             float width = Mathf.Clamp(whenRight - whereLeft, 200f, 596f);
-            SetBox(extra.SentenceRect, center, width, SentenceHeight);
+            SetBox(extra.SentenceRect, center, width, StatementSentenceHeight);
         }
 
         /// <summary>活动卡面之间的最小留白。</summary>
@@ -477,7 +524,17 @@ namespace ClueDetail.Features.Client.ClueCard
 
             if (ClueCardFeature.SentenceFontSize != null && ClueCardFeature.SentenceFontSize.Value > 0f)
             {
-                extra.Sentence.fontSize = ClueCardFeature.SentenceFontSize.Value;
+                // 照旧版 ClueText 节点（350x100 @ -25.3）的 TMP 设置：m_fontSize=16、
+                // m_enableAutoSizing=1（min 5 / max 16）、m_lineSpacing=45、
+                // m_HorizontalAlignment=1（Left —— 就是 SentenceAlignment 的默认值）。
+                // ⚠️ 不这么做就是沿用模板（房间名文本框）的字号：那个是 35、上限也是 35，
+                // 实机反馈的「悬浮字太大」正是它。
+                float size = ClueCardFeature.SentenceFontSize.Value;
+                extra.Sentence.enableAutoSizing = true;
+                extra.Sentence.fontSizeMin = Mathf.Min(5f, size);
+                extra.Sentence.fontSizeMax = size;
+                extra.Sentence.fontSize = size;
+                extra.Sentence.lineSpacing = 45f;
             }
 
             extra.Sentence.alignment = ParseAlignment(ClueCardFeature.SentenceAlignment?.Value);
@@ -540,19 +597,14 @@ namespace ClueDetail.Features.Client.ClueCard
             {
                 if (extra.IconNodes[i] != null)
                 {
-                    extra.IconNodes[i].SetActive(!showSentence);
+                    bool wasActive = extra.IconActive == null || i >= extra.IconActive.Length || extra.IconActive[i];
+                    extra.IconNodes[i].SetActive(wasActive && !showSentence);
                 }
             }
 
             if (extra.Sentence != null)
             {
                 extra.Sentence.gameObject.SetActive(showSentence);
-            }
-
-            // 活动卡面也是「图标视图」的一部分（可见性另由 image.enabled 决定）。
-            if (extra.WhatImage != null)
-            {
-                extra.WhatImage.SetActive(!showSentence);
             }
         }
 

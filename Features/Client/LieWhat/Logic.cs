@@ -277,20 +277,30 @@ namespace ClueDetail.Features.Client.LieWhat
             var labels = new List<string> { "-" };   // 第一项 = 不指定活动（旧版也是这样）
             Options.Add(EWhatType.WNone);
 
+            int candidates = 0;
             if (room != null)
             {
                 foreach (EWhatType what in RoomDeviceScan.CandidatesOf(room.DataId))
                 {
+                    int before = Options.Count;
                     Add(what, labels);
+                    if (Options.Count > before)
+                    {
+                        candidates++;
+                    }
                 }
             }
 
-            if (Options.Count <= 1)
+            // ⚠️ 默认**不列**与该房间无关的活动：伪证页做的是"编一条说得通的线索"，
+            // 让人在图书馆伪造"打开了黑洞"没有意义。0.1.17a 更狠：那种房间根本点不进来
+            // （HasLieWhatOptions :53482 判 ClueManager.RoomObjectDict）；0.1.18 改成只看
+            // 服务端下发的 LieRoomSet（CanLieInRoom :53713），于是"没有设备的房间"也能进来。
+            // 房间准入仍按服务端口径，但**列表**必须只出现这个房间真有的设备 ——
+            // 除非显式打开 AllowAnyActivity（给"纯粹想编一个"的玩法留口子）。
+            if (candidates == 0 &&
+                LieWhatFeature.AllowAnyActivity != null &&
+                LieWhatFeature.AllowAnyActivity.Value)
             {
-                // 这个房间里一台可调查设备都没有。旧版是**干脆不许**在这种房间伪造
-                // （HasLieWhatOptions :53482 判 ClueManager.RoomObjectDict）；0.1.18 改成只看
-                // 服务端下发的 LieRoomSet（CanLieInRoom :53713），所以这种房间现在点得进来。
-                // 那就别只留一个「-」：把全部有词条的活动铺开，玩家照样能编一条线索出来。
                 foreach (EWhatType what in AllActivities())
                 {
                     Add(what, labels);
@@ -300,17 +310,28 @@ namespace ClueDetail.Features.Client.LieWhat
                 {
                     _fallbackLogged = true;
                     global::ClueDetail.Core.Log.Info(
-                        "伪证：这个房间没有可调查设备，活动下拉列出全部活动供选择。");
+                        "伪证：这个房间没有可调查设备，按 AllowAnyActivity 列出全部活动。");
                 }
             }
 
             _dropdown.ClearOptions();
             _dropdown.AddOptions(labels);
+
+            // ⚠️ ClearOptions / AddOptions 都**不会**复位 m_Value，而下拉框显示的是
+            // options[m_Value] —— 不复位的话，框上会显示上一次那份列表里的第 value 项
+            //（实测就出现了一条与本行毫不相干的词条）。先把值拉回第 0 项，再刷新显示。
+            _dropdown.value = 0;
             _dropdown.RefreshShownValue();
 
-            // ⚠️ 必须显式落一次第 0 项：TMP_Dropdown 的 value setter 在「值没变」时**不触发**回调，
-            // 换房间后不清一下，上一条伪造里选的活动会留在字段上。
+            // value 本来就是 0 时 setter 不触发回调，这里显式把字段落回「不指定」，
+            // 否则换房间后上一条伪造里选的活动会留在字段上。
             Apply(0);
+
+            if (room != null)
+            {
+                global::ClueDetail.Core.Log.Info(
+                    $"伪证：房间 {room.DataId}（{room.Type}）可选活动 {candidates} 种。");
+            }
         }
 
         private static void Add(EWhatType what, List<string> labels)

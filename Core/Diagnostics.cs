@@ -145,5 +145,48 @@ namespace ClueDetail.Core
             return $"设置页开关={(LobbyToggle.IsBuilt ? "已建立" : "未建立")}，" +
                    $"伪证活动行={(LieWhatRow.IsBuilt ? "已建立" : "未建立")}";
         }
+
+        // ══════════════════ 线索解析追踪（2026-10-18 实机排查加） ══════════════════
+        // 症状是「卡片显示的设备不对 / 悬浮整句里没有活动」时，光看画面分不清断在哪一环：
+        // 包内未知字段、设备关联、房间推断，还是三个都没命中。这里把每条线索的**来源**打出来。
+        // 默认开、每条链路最多 40 行 —— 排查够用，也不会把日志刷爆。
+
+        /// <summary>是否打印线索解析追踪（绑定自 <c>[ClueRender] LogResolution</c>）。</summary>
+        public static bool LogClueResolution { get; set; } = true;
+
+        private const int TraceLimit = 40;
+
+        private static int _clueTraces;
+        private static int _hostTraces;
+
+        /// <summary>客户端侧：这条线索的详细活动是从哪一级拿到的。</summary>
+        public static void TraceClue(int roomId, int playerId, int time, int what, bool ambiguous, string source)
+        {
+            if (!LogClueResolution || _clueTraces >= TraceLimit)
+            {
+                return;
+            }
+
+            _clueTraces++;
+            string text = what == 0 ? "-" : ((EWhatType)what).ToString();
+            Log.Info(
+                $"线索解析[{_clueTraces}/{TraceLimit}] 房间{roomId} 玩家{playerId} 时间{time}" +
+                $" → 活动 {text}{(ambiguous ? "（歧义）" : "")} 来源={source}");
+        }
+
+        /// <summary>房主侧：这条要广播的线索有没有在旁路表里命中。</summary>
+        public static void TraceHost(int playerId, int time, int roomId, int what, bool hit)
+        {
+            if (!LogClueResolution || _hostTraces >= TraceLimit)
+            {
+                return;
+            }
+
+            _hostTraces++;
+            string text = hit ? ((EWhatType)what).ToString() : "-";
+            Log.Info(
+                $"房主下发[{_hostTraces}/{TraceLimit}] 玩家{playerId} 时间{time} 房间{roomId}" +
+                $" → 活动 {text}（旁路表{(hit ? "命中" : "没命中")}）");
+        }
     }
 }

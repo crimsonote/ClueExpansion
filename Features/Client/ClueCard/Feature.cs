@@ -102,12 +102,12 @@ namespace ClueDetail.Features.Client.ClueCard
             GuessWhatCard = config.Bind(
                 section,
                 "GuessWhatCard",
-                true,
-                "解析不出具体活动时（房主没装本模块、或这个房间有好几种设备），\n" +
-                "是否退化为「该房间存在的第一种设备」的卡面 —— 只是别让那一格空着。\n" +
-                "⚠️ 这时文本**不会**跟着猜：整句仍是通用文案「操作了设备」或原版句式，\n" +
-                "所以图只表示「这个房间里确实有这台设备」，不表示「这次就是它」。\n" +
-                "想要「不确定就完全留空」的话，把本项关掉。");
+                false,
+                "解析不出具体活动时（房主没装本模块、或这个房间有好几种设备），是否退化为\n" +
+                "「该房间存在的第一种设备」的卡面。\n" +
+                "⚠️ 默认**关**：那种图对应的是「房间里有什么」，不是「这次用了哪台」——\n" +
+                "开了会看到明显没被操作的设备（实机反馈过），所以宁缺勿滥。\n" +
+                "确定想要「不留空」再打开它。");
 
             RoomX = config.Bind(
                 section,
@@ -128,23 +128,24 @@ namespace ClueDetail.Features.Client.ClueCard
             WhatX = config.Bind(
                 section,
                 "WhatX",
-                -40f,
+                -15f,
                 new ConfigDescription(
-                    "活动卡面的横向中心（相对整行中心）。默认落在房间与分隔线之间。",
+                    "活动卡面的横向中心（相对整行中心）。默认落在**分隔竖线右侧**、时间左侧。",
                     new AcceptableValueRange<float>(-298f, 298f)));
 
             LineX = config.Bind(
                 section,
                 "LineX",
-                15f,
+                -60f,
                 new ConfigDescription(
-                    "分隔竖线的横向中心。补上活动卡面后，它和时间一起让位给新的一格。",
+                    "分隔竖线（那条黄条）的横向中心：默认在房间与活动卡面之间。\n" +
+                    "悬浮显示整句时它（以及整块图标区）会被隐藏。",
                     new AcceptableValueRange<float>(-298f, 298f)));
 
             WhenX = config.Bind(
                 section,
                 "WhenX",
-                95f,
+                100f,
                 new ConfigDescription(
                     "时间文本的横向中心。",
                     new AcceptableValueRange<float>(-298f, 298f)));
@@ -159,25 +160,28 @@ namespace ClueDetail.Features.Client.ClueCard
             SentenceX = config.Bind(
                 section,
                 "SentenceX",
-                -2f,
+                -25.3f,
                 new ConfigDescription(
-                    "整句文本框的横向中心（相对整行中心）。",
+                    "整句文本框的横向中心（相对整行中心）。默认 = 旧版 ClueText 节点的 -25.3。",
                     new AcceptableValueRange<float>(-298f, 298f)));
 
             SentenceWidth = config.Bind(
                 section,
                 "SentenceWidth",
-                380f,
+                350f,
                 new ConfigDescription(
-                    "整句文本框的宽度。默认刚好占满头像与「提出命题」按钮之间的空档。",
+                    "整句文本框的宽度。默认 = 旧版 ClueText 节点的 350（高度固定 100，同一份 prefab 值）。",
                     new AcceptableValueRange<float>(100f, 596f)));
 
             SentenceFontSize = config.Bind(
                 section,
                 "SentenceFontSize",
-                0f,
+                16f,
                 new ConfigDescription(
-                    "整句的字号；0 = 沿用模板（房间名文本框）的字号。",
+                    "整句的字号。默认 = 旧版 ClueText 节点的 m_fontSize=16。\n" +
+                    "⚠️ 别沿用模板（房间名文本框）的字号：那是 35、自动缩放上限也是 35，写出来明显偏大。\n" +
+                    "设成 0 = 完全不碰字号（沿用模板）。本项 > 0 时按旧版口径开自动缩放\n" +
+                    "（min 5 / max = 本值），并把行距设成旧版的 45。",
                     new AcceptableValueRange<float>(0f, 60f)));
 
             SentenceAlignment = config.Bind(

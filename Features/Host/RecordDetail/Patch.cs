@@ -47,21 +47,78 @@ namespace ClueDetail.Features.Host.RecordDetail
                     return;
                 }
 
-                int playerId = player.PublicInfo.PlayerId;
+                DetailStore.Remember(
+                    RoleClueId(player, state),
+                    ServerTimeManager.Instance.SurviveTime,
+                    __instance.RoomID,
+                    what);
+            }
+
+            /// <summary>
+            /// 原版方法跑完之后，把活动直接补进**服务端 ClueList 里的对象**。
+            /// </summary>
+            /// <remarks>
+            /// ⚠️ 这一步不能省（2026-10-18 实机反馈「两端都装了 mod，房主自己看到的还是不对」查出）：
+            /// 客户端 <c>PacketHandler.Handle_S_ADD_CLUE</c>（:43621）第一行就是
+            /// <c>if (Managers.Host == null || !Managers.Host.IsHost)</c> —— **房主自己的客户端不镜像**，
+            /// 它读的是服务端 <c>ClueList</c> 里的对象。而调用点写的是
+            /// <c>Info = propositionInfo.Clone()</c>（:166418）：<see cref="BroadcastHook"/> 改的是那个
+            /// **克隆**，服务端对象一直没被碰过。于是出现"远端客户端有活动、房主自己反而没有"。
+            /// <para>
+            /// 与服务端 <c>ScanHook</c> 同一口径（它也直接改 <c>ClueList</c> 的对象）：
+            /// 只加一个未知字段，原版字段一个都不动，未装本模块的一端照旧忽略它。
+            /// 广播那条路仍然要保留 —— 包里的 <c>Info</c> 在这之前就已经克隆好了。
+            /// </para>
+            /// </remarks>
+            private static void Postfix(ServerDevice __instance, GamePlayer player, Define.EWhatState state)
+            {
+                if (!FeatureLoader.Enabled<RecordDetailFeature>()) return;
+                if (__instance == null || player == null || !RoomState.HostBroadcast)
+                {
+                    return;
+                }
+
+                int what = DetailStore.Recall(
+                    RoleClueId(player, state),
+                    ServerTimeManager.Instance.SurviveTime,
+                    __instance.RoomID);
+                if (what == 0)
+                {
+                    return;
+                }
+
+                var list = __instance.ClueList;
+                if (list == null)
+                {
+                    return;
+                }
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var info = list[i];
+                    if (info != null && !info.Destroyed &&
+                        info.PlayerId == RoleClueId(player, state) &&
+                        info.RoomId == __instance.RoomID)
+                    {
+                        UnknownFields.SetWhat(info, what);
+                    }
+                }
+            }
+
+            /// <summary>与 <c>Device.RecordLastUsingPlayer</c>（:166393）的身份映射保持一致。</summary>
+            private static int RoleClueId(GamePlayer player, Define.EWhatState state)
+            {
                 switch (state)
                 {
                     case Define.EWhatState.Anonymity:
-                        playerId = 0;
-                        break;
+                        return 0;
                     case Define.EWhatState.Mastermind:
-                        playerId = 11037;
-                        break;
+                        return 11037;
                     case Define.EWhatState.Black:
-                        playerId = 66613;
-                        break;
+                        return 66613;
+                    default:
+                        return player.PublicInfo.PlayerId;
                 }
-
-                DetailStore.Remember(playerId, ServerTimeManager.Instance.SurviveTime, __instance.RoomID, what);
             }
         }
 
@@ -129,6 +186,7 @@ namespace ClueDetail.Features.Host.RecordDetail
                 }
 
                 int what = DetailStore.Recall(add.Info.PlayerId, add.Info.Time, add.Info.RoomId);
+                Diagnostics.TraceHost(add.Info.PlayerId, add.Info.Time, add.Info.RoomId, what, what != 0);
                 if (what != 0)
                 {
                     UnknownFields.SetWhat(add.Info, what);

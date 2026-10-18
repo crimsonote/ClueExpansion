@@ -28,6 +28,10 @@ namespace ClueDetail.Core
         /// 解析详细活动。<paramref name="ambiguous"/> 为 true 表示"知道房间里有活动，但不止一种"，
         /// 此时 <paramref name="what"/> 无意义。
         /// </summary>
+        /// <remarks>
+        /// 四级来源，可靠性递减；每一级的命中都经 <see cref="Diagnostics.TraceClue"/> 记一行
+        /// （实机出问题时，"到底断在哪一环"靠这行日志判断，而不是靠猜）。
+        /// </remarks>
         public static bool TryResolve(ClueManager.Clue clue, out EWhatType what, out bool ambiguous)
         {
             what = EWhatType.WNone;
@@ -38,45 +42,76 @@ namespace ClueDetail.Core
                 return false;
             }
 
+            int roomId = clue.Info.RoomId;
+            int playerId = clue.Info.PlayerId;
+            int time = clue.Info.Time;
+
             // 房主装了但关掉了本模块 → 连客户端自采集也一起停，否则等于把房主关掉的信息又补回来。
             if (!RoomState.AllowDetail)
             {
+                Diagnostics.TraceClue(roomId, playerId, time, 0, false, "本局禁用");
                 return false;
             }
 
+            // ① 服务端精确下发（房主装了本模块时走这条）
             int fromPacket = UnknownFields.GetWhat(clue.Info);
             if (fromPacket != 0)
             {
                 what = (EWhatType)fromPacket;
+                Diagnostics.TraceClue(roomId, playerId, time, fromPacket, false, "包内未知字段");
                 return true;
             }
 
+            // ①.5 房主本机：服务端旁路表。
+            // 为什么要这一条：房主自己的客户端**不走镜像** —— 客户端
+            // PacketHandler.Handle_S_ADD_CLUE（0.1.18 :43621）第一行就是
+            // `if (Managers.Host == null || !Managers.Host.IsHost)`，房主读的是服务端 ClueList 里的对象。
+            // 那些对象现在由 RecordDetail 的 Postfix 补写（远端客户端仍走 ① 的包内字段），
+            // 这里再兜一层：万一界面拿的是早于补写的副本，也能按同一把键捞回来。
+            if (RoomState.IsHost)
+            {
+                int fromHost = DetailStore.Recall(playerId, time, roomId);
+                if (fromHost != 0)
+                {
+                    what = (EWhatType)fromHost;
+                    Diagnostics.TraceClue(roomId, playerId, time, fromHost, false, "房主旁路表");
+                    return true;
+                }
+            }
+
+            // ② 广播自带的设备号（客户端本来就知道这条线索属于哪台设备）
             EWhatType byDevice = ActivityMap.WhatOfDevice(
-                ActivityMap.DeviceOf(clue.Info.PlayerId, clue.Info.Time, clue.Info.RoomId));
+                ActivityMap.DeviceOf(playerId, time, roomId));
             if (byDevice != EWhatType.WNone)
             {
                 what = byDevice;
+                Diagnostics.TraceClue(roomId, playerId, time, (int)byDevice, false, "设备关联");
                 return true;
             }
 
+            // ③ / ④ 客户端自采集
             if (!SelfCapture.On)
             {
+                Diagnostics.TraceClue(roomId, playerId, time, 0, false, "自采集已关");
                 return false;
             }
 
-            var candidates = RoomDeviceScan.CandidatesOf(clue.Info.RoomId);
+            var candidates = RoomDeviceScan.CandidatesOf(roomId);
             if (candidates.Count == 0)
             {
+                Diagnostics.TraceClue(roomId, playerId, time, 0, false, "房间无设备（三个来源都没命中）");
                 return false;
             }
 
             if (candidates.Count == 1)
             {
                 what = candidates[0];
+                Diagnostics.TraceClue(roomId, playerId, time, (int)what, false, "房间唯一设备");
                 return true;
             }
 
             ambiguous = true;
+            Diagnostics.TraceClue(roomId, playerId, time, 0, true, $"房间有 {candidates.Count} 种设备");
             return true;
         }
 
