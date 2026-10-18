@@ -51,7 +51,13 @@ namespace ClueDetail
 
             Log.LogInfo(
                 $"[ClueDetail] {Version} 加载完成：启用 {result.Enabled}，停用 {result.Disabled}，" +
-                $"失败 {result.Failed}。配置：{path}。");
+                $"失败 {result.Failed}，补丁 {result.Patched} 个。配置：{path}。");
+
+            if (result.Patched == 0)
+            {
+                Log.LogError(
+                    "[ClueDetail] 一个补丁都没挂上 —— 补丁类的组织方式与装载器不匹配，所有功能都不会生效。");
+            }
 
             if (result.Failed > 0)
             {

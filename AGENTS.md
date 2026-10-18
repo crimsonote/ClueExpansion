@@ -58,7 +58,8 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 
 - 命名空间与目录一致。
 - 一个功能目录 = 一个功能：`Feature.cs`（`[PatchFeature]` 声明）+ `Patch.cs`（补丁）。
-  两者是**同一个 partial 类**，Harmony 的 `PatchAll` 能扫到另一个文件里的嵌套补丁类。
+  两者是**同一个 partial 类**；补丁类是它的**嵌套类**，由装载器**逐个 `PatchAll(补丁类)`** 挂载。
+  ⚠️ 见 §11.7 —— 用 `harmony.PatchAll(功能类)` 是**一个补丁都挂不上**的。
 - `FeatureLoader` 自动：绑段开关 `[Section] Enabled` → 调用可选的 `static void Bind(ConfigFile, string)`
   → 启用则 `PatchAll`。**功能代码里禁止手写 `Config.Bind`。**
 - **开关全是热的**（2026-10-18 起：改 `.cfg` 不用重启游戏）——见 §11。三条配套约定：
@@ -448,3 +449,29 @@ partial 的**每一份声明**都要写一致。
 ```
 
 启动那一行仍是 `启用 N，停用 M，失败 K` —— **失败必须为 0**。
+
+### 11.7 ⚠️ 补丁类必须由装载器**逐个** `PatchAll`（2026-10-18 血的教训）
+
+`harmony.PatchAll(功能类)` **不会**扫这个类型的嵌套类 —— Cecil 实证：
+`PatchAll(Type)` → `CreateClassProcessor(type, false).Patch()`，**全程没有 `GetNestedTypes`**。
+而本项目的补丁类**全部嵌套**在 Feature 里 ⇒ **一个都挂不上**；
+更糟的是 `PatchAll` 对「没找到补丁」**不报错** ⇒ 日志照样写「失败 0」。
+
+**症状**：插件加载一切正常（配置生成、自定义协议注册、镜像到 DT 页都成功），
+**但所有功能都没效果** —— 2026-10-18 用户实机报告「小熊不显示、设置项不存在、
+线索没补全活动、投出黑幕照常结束」时，根因就是这个。
+
+**改法**（`FeatureLoader.MountPatches`）：枚举本功能名下的补丁类，**逐个 `PatchAll(补丁类)`**
+—— 与 DT_Tools 的 `FeatureLoader.Mount` 同款。归属判断要**同时**覆盖两种组织方式：
+
+```csharp
+bool belongs = t.IsNested
+    ? t.DeclaringType == featureType          // 嵌套在功能类里（本项目）
+    : t.Namespace == featureType.Namespace;   // 同命名空间的顶层类（DT_Tools 那样）
+```
+
+⚠️ **只比 `Namespace` 会漏掉嵌套类**：嵌套类型在**元数据**里的 `Namespace` 是空的
+（Cecil 读出来是 `""`；只有运行期反射才返回外层命名空间）。
+
+**唯一可靠的判据是启动日志里的 `补丁 N 个`**：**N 必须大于 0**。
+`失败 0` 只说明没抛异常，**不代表补丁挂上了** —— 这两件事必须分开看。

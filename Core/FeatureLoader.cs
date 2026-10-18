@@ -14,11 +14,15 @@ namespace ClueDetail.Core
         public readonly int Disabled;
         public readonly int Failed;
 
-        public LoadResult(int enabled, int disabled, int failed)
+        /// <summary>实际挂上的补丁类总数。**这个数字才是"功能是否真的接上了"的凭据**。</summary>
+        public readonly int Patched;
+
+        public LoadResult(int enabled, int disabled, int failed, int patched)
         {
             Enabled = enabled;
             Disabled = disabled;
             Failed = failed;
+            Patched = patched;
         }
     }
 
@@ -112,7 +116,7 @@ namespace ClueDetail.Core
             // 单实例：空转式不卸载补丁，所以不需要按功能分开。
             var harmony = new Harmony(Plugin.Guid);
 
-            int enabled = 0, disabled = 0, failed = 0;
+            int enabled = 0, disabled = 0, failed = 0, patched = 0;
 
             foreach (Type type in typeof(FeatureLoader).Assembly.GetTypes())
             {
@@ -166,15 +170,25 @@ namespace ClueDetail.Core
                 }
 
                 // ── 补丁**总是挂**（空转式）；开关只在入口检查里生效 ──
+                // ⚠️ 必须**逐个补丁类**挂，不能用 harmony.PatchAll(type) —— 原因见 MountPatches 的注释。
+                int mounted = 0;
                 try
                 {
-                    harmony.PatchAll(type);
+                    mounted = MountPatches(harmony, type, log);
                 }
                 catch (Exception ex)
                 {
                     failed++;
                     log.LogError($"[ClueDetail] 功能 {type.Name} 补丁挂载失败：{ex}");
                     continue;
+                }
+
+                patched += mounted;
+                if (mounted == 0)
+                {
+                    log.LogWarning(
+                        $"[ClueDetail] 功能 {type.Name} 在命名空间 {type.Namespace} 下没有找到任何" +
+                        $" [HarmonyPatch] 类 —— 这个功能不会有任何效果。");
                 }
 
                 runtime.Active = IsOn(runtime);
@@ -192,7 +206,7 @@ namespace ClueDetail.Core
                 }
             }
 
-            return new LoadResult(enabled, disabled, failed);
+            return new LoadResult(enabled, disabled, failed, patched);
         }
 
         /// <summary>
@@ -263,6 +277,71 @@ namespace ClueDetail.Core
         }
 
         // ══════════════════ 内部 ══════════════════
+
+        /// <summary>
+        /// 把某个功能命名空间下的**全部补丁类逐个挂上**，返回挂载成功的个数。
+        /// </summary>
+        /// <remarks>
+        /// ⚠️ <b>不能用 <c>harmony.PatchAll(featureType)</c></b>：那个重载只处理该类型**自身声明**的方法
+        /// （Cecil 实证：<c>PatchAll(Type)</c> → <c>CreateClassProcessor(type, false).Patch()</c>，
+        /// 全程没有 <c>GetNestedTypes</c> 调用），而本项目的补丁类**全部是嵌套**在 Feature 里的
+        /// ⇒ 实测一个补丁都没挂上；更糟的是 <c>PatchAll</c> 对"没找到补丁"**不报错**，
+        /// 于是日志照样写着「失败 0」。
+        /// <para>
+        /// 这是 2026-10-18 用户实机报告「所有功能都是坏的」之后查出的根因 ——
+        /// 在此之前 AGENTS.md §3 那句「PatchAll 能扫到嵌套补丁类」是**错的**。
+        /// </para>
+        /// <para>
+        /// 改法照抄 DT_Tools 的 <c>FeatureLoader.Mount</c>：枚举命名空间下带 <c>[HarmonyPatch]</c> 的类，
+        /// 逐个 <c>PatchAll(补丁类)</c>。顺带得到「这个功能挂了几个补丁」这个**可观测的数字**。
+        /// </para>
+        /// </remarks>
+        private static int MountPatches(Harmony harmony, Type featureType, ManualLogSource log)
+        {
+            var patchTypes = new List<Type>();
+
+            foreach (Type t in featureType.Assembly.GetTypes())
+            {
+                // 归属判断要同时覆盖两种组织方式：
+                //   ① 嵌套在功能类里（本项目就是这样）② 同命名空间的顶层类（DT_Tools 那样）。
+                // ⚠️ 不能只比 Namespace：**嵌套类型在元数据里的 Namespace 是空的**
+                //   （Cecil 读出来就是 ""，只有运行期反射才返回外层命名空间）。
+                bool belongs = t.IsNested
+                    ? t.DeclaringType == featureType
+                    : t.Namespace == featureType.Namespace;
+
+                if (!t.IsClass || !belongs)
+                {
+                    continue;
+                }
+
+                if (!Attribute.IsDefined(t, typeof(HarmonyPatch)))
+                {
+                    continue;
+                }
+
+                patchTypes.Add(t);
+            }
+
+            // 顺序固定，保证挂载次序可复现（与 DT_Tools 一致）。
+            patchTypes.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
+
+            int mounted = 0;
+            foreach (Type patchType in patchTypes)
+            {
+                try
+                {
+                    harmony.PatchAll(patchType);
+                    mounted++;
+                }
+                catch (Exception ex)
+                {
+                    log.LogError($"[ClueDetail] 补丁 {patchType.Name} 挂载失败：{ex}");
+                }
+            }
+
+            return mounted;
+        }
 
         private static bool IsOn(FeatureRuntime feature)
         {
