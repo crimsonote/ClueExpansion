@@ -27,5 +27,13 @@ namespace ClueDetail.Features.Client.LieWhat
         side: FeatureSide.Client)]
     internal static partial class LieWhatFeature
     {
+        /// <summary>
+        /// 热关闭：撤掉伪证页里那个下拉。
+        /// </summary>
+        /// <remarks>热开启时不需要额外动作 —— 打开伪证页时原版会走 <c>Init</c>，克隆会重新发生。</remarks>
+        public static void OnDisabled()
+        {
+            LieWhatDropdown.Destroy();
+        }
     }
 }

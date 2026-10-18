@@ -33,6 +33,13 @@ namespace ClueDetail.Features.UI.LobbyToggle
 
         private static Toggle _toggle;
         private static CanvasGroup _group;
+
+        /// <summary>克隆出来的整行（热关闭时要整行撤掉，不能只撤 Toggle 所在的子对象）。</summary>
+        private static Transform _row;
+
+        /// <summary>那一行的标题文本（改配置时要热更新它）。</summary>
+        private static TMP_Text _title;
+
         private static bool _failedLogged;
 
         public static void Ensure(UI_LobbyPreset preset)
@@ -70,12 +77,10 @@ namespace ClueDetail.Features.UI.LobbyToggle
 
             Transform row = Object.Instantiate(template, content);
             row.name = RowName;
+            _row = row;
 
-            TMP_Text title = FindTitle(row);
-            if (title != null)
-            {
-                title.text = LobbyToggleFeature.RowTitle?.Value ?? "线索详细活动";
-            }
+            _title = FindTitle(row);
+            ApplyTitle();
 
             _toggle = row.GetComponentInChildren<Toggle>(true);
             if (_toggle == null)
@@ -97,6 +102,49 @@ namespace ClueDetail.Features.UI.LobbyToggle
             global::ClueDetail.Core.Log.Info("设置页已加入「线索详细活动」开关。");
         }
 
+        /// <summary>
+        /// 撤掉克隆出来的整行（功能被热关闭时）。
+        /// </summary>
+        /// <remarks>
+        /// 不撤的后果：设置页里那一行还在，但它的回调已经没有任何代码在处理
+        /// —— 房主拨它不会有任何效果，反而会让人以为设置坏了。
+        /// </remarks>
+        public static void Destroy()
+        {
+            if (_row != null)
+            {
+                Object.Destroy(_row.gameObject);
+            }
+
+            _row = null;
+            _toggle = null;
+            _group = null;
+            _title = null;
+            _failedLogged = false;
+        }
+
+        /// <summary>
+        /// 把标题文本对齐到配置（**热更新**：改 RowTitle 立刻生效）。
+        /// </summary>
+        /// <remarks>
+        /// 放在这里而不是订阅 <c>SettingChanged</c>：那个回调可能在 HTTP 线程触发
+        /// （DT_Tools 的 CONFIG 页），直接改 <c>TMP_Text</c> 不安全。
+        /// Sync 由原版设置页每次刷新时调用，本来就在主线程。
+        /// </remarks>
+        public static void ApplyTitle()
+        {
+            if (_title == null)
+            {
+                return;
+            }
+
+            string want = LobbyToggleFeature.RowTitle?.Value ?? "线索详细活动";
+            if (_title.text != want)
+            {
+                _title.text = want;
+            }
+        }
+
         public static void Sync(UI_LobbyPreset preset)
         {
             Ensure(preset);
@@ -112,6 +160,8 @@ namespace ClueDetail.Features.UI.LobbyToggle
             }
 
             _toggle.SetIsOnWithoutNotify(entry.Value);
+
+            ApplyTitle();
 
             bool isHost = RoomState.IsHost;
             _toggle.interactable = isHost;

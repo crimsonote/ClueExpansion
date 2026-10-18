@@ -32,5 +32,17 @@ namespace ClueDetail.Features.UI.LobbyToggle
                 "线索详细活动",
                 "设置页里那一行的标题文案。语言不同想改显示名时改这里即可。");
         }
+
+        /// <summary>
+        /// 热关闭：把已经克隆进设置页的那一行撤掉。
+        /// </summary>
+        /// <remarks>
+        /// 热开启时不需要额外动作 —— <c>LobbyToggle.Ensure</c> 下次被调（打开设置页 / 原版刷新）时
+        /// 会重新建出来。
+        /// </remarks>
+        public static void OnDisabled()
+        {
+            LobbyToggle.Destroy();
+        }
     }
 }

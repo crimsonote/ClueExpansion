@@ -50,5 +50,38 @@ namespace ClueDetail.Features.Host.RecordDetail
                 CdWire.BroadcastState();
             };
         }
+
+        /// <summary>
+        /// 热开启：恢复房主侧的下发状态，并**立刻**告知全房（客户端据此恢复显示详细活动）。
+        /// </summary>
+        public static void OnEnabled()
+        {
+            RoomState.HostBroadcast = BroadcastDetail != null && BroadcastDetail.Value;
+            NotifyClients();
+        }
+
+        /// <summary>
+        /// 热关闭：把「房主已关闭」的状态广播出去。
+        /// </summary>
+        /// <remarks>
+        /// 不做这一步的话：功能关了但客户端还等着我们的详情 —— 它们会一直显示「装载中」的空档。
+        /// </remarks>
+        public static void OnDisabled()
+        {
+            RoomState.HostBroadcast = false;
+            NotifyClients();
+        }
+
+        private static void NotifyClients()
+        {
+            try
+            {
+                CdWire.BroadcastState();
+            }
+            catch (global::System.Exception ex)
+            {
+                global::ClueDetail.Core.Log.Warn($"详细活动：状态广播失败（{ex.Message}）。");
+            }
+        }
     }
 }

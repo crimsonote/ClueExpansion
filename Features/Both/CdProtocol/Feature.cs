@@ -32,5 +32,23 @@ namespace ClueDetail.Features.Both.CdProtocol
         {
             ClueDetail.Core.Net.CdWire.RegisterAll();
         }
+
+        /// <summary>
+        /// 热开启：让本机的客户端**重新声明一次**能力。
+        /// </summary>
+        /// <remarks>
+        /// 必要的原因：<c>CdHello</c> 是「每次连接只发一次」的（<c>ClientCapability.EnsureHello</c>）。
+        /// 关掉本功能的这段时间里，那个标记还留着 ⇒ 重开后不会补发 ⇒ 服务端就不知道谁装了模块。
+        /// </remarks>
+        public static void OnEnabled()
+        {
+            ClientCapability.ResetHello();
+        }
+
+        /// <summary>热关闭：同样清掉「已声明」标记，重开后会重新声明。</summary>
+        public static void OnDisabled()
+        {
+            ClientCapability.ResetHello();
+        }
     }
 }

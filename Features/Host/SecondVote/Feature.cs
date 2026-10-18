@@ -31,5 +31,11 @@ namespace ClueDetail.Features.Host.SecondVote
         {
             SecondVoteRule.Reset();
         }
+
+        /// <summary>热关闭：把本局的「已经重开过一轮」标记清掉，重开时不会带残血。</summary>
+        public static void OnDisabled()
+        {
+            SecondVoteRule.Reset();
+        }
     }
 }

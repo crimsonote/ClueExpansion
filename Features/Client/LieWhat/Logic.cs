@@ -27,6 +27,26 @@ namespace ClueDetail.Features.Client.LieWhat
         private static TMP_Dropdown _dropdown;
         private static bool _failedLogged;
 
+        /// <summary>
+        /// 撤掉克隆出来的下拉（功能被热关闭时）。
+        /// </summary>
+        /// <remarks>
+        /// 不撤的后果：界面上那个下拉还在，但它的回调已经没有任何代码在处理
+        /// —— 玩家选了「详细活动」却什么都不会发生。
+        /// </remarks>
+        public static void Destroy()
+        {
+            if (_dropdown != null)
+            {
+                Object.Destroy(_dropdown.gameObject);
+            }
+
+            _dropdown = null;
+            _tablet = null;
+            _failedLogged = false;
+            Options.Clear();
+        }
+
         public static void Build(UI_GameTablet tablet)
         {
             if (tablet == null || _dropdown != null)

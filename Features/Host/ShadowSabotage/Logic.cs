@@ -202,6 +202,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                     continue;
                 }
 
+                EnsurePosition(dm, state, device);
                 RefreshFakes(device, state);
             }
         }
@@ -645,6 +646,190 @@ namespace ClueDetail.Features.Host.ShadowSabotage
         internal static string KindName(BreakerState state)
         {
             return state != null && state.Kind == BreakerKind.Clock ? "时钟记录组件" : "身份识别组件";
+        }
+
+        // ══════════════════ 热开关（2026-10-18） ══════════════════
+
+        /// <summary>
+        /// 功能被热开启：把破坏点重新放回场景，并按**电闸的真实状态**决定能不能拆。
+        /// </summary>
+        /// <remarks>
+        /// 为什么不直接调用 <see cref="OnWindowStart"/>：那会把两个点无条件置成「可破坏」，
+        /// 等于热开一次就白送一个窗口。这里改成去读电闸的真实状态 ——
+        /// 存在 <c>MissionType == -1</c> 的电闸，就说明当前窗口开着（原版 <c>Fusebox.StartMission</c>
+        /// 就是这么打的标记，:165671）。
+        /// </remarks>
+        public static void OnEnabled()
+        {
+            EnsureDevices();
+
+            bool windowOpen = FuseboxWindowOpen();
+            var dm = ServerDeviceManager.Instance;
+
+            for (int i = 0; i < BreakerStates.All.Length; i++)
+            {
+                var state = BreakerStates.All[i];
+                state.CanBreak = windowOpen;
+                state.Broken = false;
+                state.BaseProgress = 0f;
+                state.Progress = 0f;
+                state.Faked.Clear();
+                state.LastResend.Clear();
+
+                var device = FindDevice(dm, state);
+                if (device == null)
+                {
+                    continue;
+                }
+
+                SetSlot0(device, 0);
+                if (windowOpen)
+                {
+                    SendPin(state, device, true);
+                    RefreshFakes(device, state);
+                }
+            }
+
+            global::ClueDetail.Core.Log.Info(
+                $"破坏点：功能已热开启（电闸窗口{(windowOpen ? "开着" : "关着")}）。");
+        }
+
+        /// <summary>
+        /// 功能被热关闭：撤掉全部表现，并把两只小熊从场景里移除。
+        /// </summary>
+        /// <remarks>
+        /// 不做这一步的后果：关掉之后场景里留着两只**没有任何交互**的熊，
+        /// 而且 <c>StateList[1]</c> 的假主人还留在某些客户端上 —— 他们看得到「按 E」提示，
+        /// 按下去却什么都不会发生。
+        /// </remarks>
+        public static void OnDisabled()
+        {
+            var dm = ServerDeviceManager.Instance;
+
+            for (int i = 0; i < BreakerStates.All.Length; i++)
+            {
+                var state = BreakerStates.All[i];
+                var device = FindDevice(dm, state);
+
+                try
+                {
+                    AbortSession(state);            // 撤进度条
+                    AbortFakes(state);              // 收回假主人
+
+                    if (state.ArrowSent)
+                    {
+                        BroadcastRemoveArrow(device);
+                        state.ArrowSent = false;
+                    }
+
+                    if (device != null)
+                    {
+                        SendPin(state, device, false);   // 撤黑幕的图钉
+                        dm.RemoveDevice(device);         // 撤掉小熊本体
+                    }
+                }
+                catch (global::System.Exception ex)
+                {
+                    global::ClueDetail.Core.Log.Exception(
+                        ex, $"破坏点：热关闭时清理[{KindName(state)}]失败（可忽略，状态已重置）。");
+                }
+
+                BreakerStates.ResetOne(state);
+            }
+
+            BreakBar.ClearAll();
+
+            global::ClueDetail.Core.Log.Info("破坏点：功能已热关闭（破坏点与相关表现已撤除）。");
+        }
+
+        /// <summary>
+        /// 当前是否处于「可破坏窗口」—— 判据与原版一致：存在正在派发中的电闸。
+        /// </summary>
+        /// <remarks>
+        /// 原版 <c>Fusebox.StartMission</c>（0.1.18 :165671）把 <c>MissionType</c> 置成 -1，
+        /// <c>DisconnetCable</c>（:165654）与 <c>ClearSabotage</c>（:165681）把它清回 0。
+        /// 所以「有 <c>MissionType == -1</c> 的电闸」就是「窗口开着」的等价判据。
+        /// </remarks>
+        /// <summary>
+        /// 坐标配置被改了就把设备**重建**到新位置（**热更新**）。
+        /// </summary>
+        /// <remarks>
+        /// 为什么必须重建：客户端的 <c>S_MODIFY_DEVICE</c> 处理只刷
+        /// Bubble / MissionType / StateList，**不更新 Pos**（0.1.18 :27850 的 <c>Modify</c>），
+        /// 所以光改服务端的 <c>DeviceInfo.Pos</c> 不会让那只熊在客户端挪窝。
+        /// 每秒检查一次（跟着 <see cref="Tick"/> 的节拍），不一致就移除重建。
+        /// </remarks>
+        private static void EnsurePosition(ServerDeviceManager dm, BreakerState state, BreakerDevice device)
+        {
+            if (dm == null || state == null || device == null || device.DeviceInfo == null)
+            {
+                return;
+            }
+
+            var pos = device.DeviceInfo.Pos;
+            if (pos == null)
+            {
+                return;
+            }
+
+            float wantX = state.Kind == BreakerKind.Identify ? IdentifyX : ClockX;
+            float wantY = state.Kind == BreakerKind.Identify ? IdentifyY : ClockY;
+
+            if (global::System.Math.Abs(pos.X - wantX) < 0.5f && global::System.Math.Abs(pos.Y - wantY) < 0.5f)
+            {
+                return;
+            }
+
+            global::ClueDetail.Core.Log.Info(
+                $"破坏点[{KindName(state)}] 坐标已改为 ({wantX:F0},{wantY:F0})，重建设备。");
+
+            try
+            {
+                AbortSession(state);
+                AbortFakes(state);
+
+                if (state.ArrowSent)
+                {
+                    BroadcastRemoveArrow(device);
+                    state.ArrowSent = false;
+                }
+
+                SendPin(state, device, false);
+                dm.RemoveDevice(device);
+            }
+            catch (global::System.Exception ex)
+            {
+                global::ClueDetail.Core.Log.Exception(ex, "破坏点：坐标变更时清理旧设备失败。");
+            }
+
+            var fresh = EnsureOne(dm, state);
+            if (fresh != null)
+            {
+                SetSlot0(fresh, state.Broken ? 2 : 0);
+                BroadcastState(fresh);
+                RefreshFakes(fresh, state);
+            }
+        }
+
+        private static bool FuseboxWindowOpen()
+        {
+            var dm = ServerDeviceManager.Instance;
+            if (dm == null || dm.Fuseboxes == null)
+            {
+                return false;
+            }
+
+            var list = dm.Fuseboxes;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var fusebox = list[i];
+                if (fusebox != null && fusebox.DeviceInfo != null && fusebox.DeviceInfo.MissionType == -1)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         // ══════════════════ 状态翻转的扩展点 ══════════════════
