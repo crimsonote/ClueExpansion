@@ -797,7 +797,6 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                     if (frame == null) return true;
                     if (!IsInClockWindow(frame.Time)) return true;
 
-                    TryBlackout(frame.Time);
                     Pending.Add(frame);
                     return false;
                 }
@@ -808,6 +807,9 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                 }
             }
 
+            /// <summary>换局清空（由 <see cref="TimelineReplayClearHook"/> 调用）。</summary>
+            internal static void OnClear()
+            {
                 Pending.Clear();
             }
 

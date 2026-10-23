@@ -53,12 +53,6 @@ namespace ClueDetail.Features.Host.ShadowSabotage
         /// <summary>时钟记录组件破坏点的 Y 坐标（电脑室刀架下）。</summary>
         public static ConfigEntry<float> PosClockY { get; private set; }
 
-        /// <summary>时间污染期间，按「拍摄节拍」给黑方/黑幕发 2 秒全屏变暗提醒。</summary>
-        public static ConfigEntry<bool> BlackoutReminder { get; private set; }
-
-        /// <summary>变暗提醒是否发给所有人（默认只发黑方/黑幕）。</summary>
-        public static ConfigEntry<bool> BlackoutToAll { get; private set; }
-
         /// <summary>是否启用「身份识别组件」这个破坏点。</summary>
         public static ConfigEntry<bool> EnableIdentify { get; private set; }
 
@@ -123,21 +117,6 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                 "时钟记录组件破坏点的 Y 坐标。\n" +
                 "2026-10-23 起默认 4592 = 图书馆 warpMagic 右下方空地（tile 5,20 中心）。\n" +
                 "旧默认 3430 是电脑室最右侧刀架下方。");
-
-            BlackoutReminder = config.Bind(
-                section,
-                "BlackoutReminder",
-                true,
-                "时间破坏期间，每当「回放拍摄」命中每小时第二次（帧时间相对拍摄偏移 = 10 分钟）时，\n" +
-                "给黑方 / 黑幕（或所有人，见 BlackoutToAll）发一次全屏变暗提醒。\n" +
-                "客户端原版实现是 2 秒黑屏，中心约等于拍摄时刻 +1 秒。");
-
-            BlackoutToAll = config.Bind(
-                section,
-                "BlackoutToAll",
-                false,
-                "变暗提醒是否发给所有人。\n" +
-                "false（默认）= 只发黑方（Dark / Black）与黑幕；true = 所有存活玩家都收到。");
 
             EnableIdentify = config.Bind(
                 section,
@@ -287,9 +266,6 @@ namespace ClueDetail.Features.Host.ShadowSabotage
         internal static float IdentifyX => PosIdentifyX != null ? PosIdentifyX.Value : 6580f;
         internal static float IdentifyY => PosIdentifyY != null ? PosIdentifyY.Value : 4900f;
         internal static float ClockX => PosClockX != null ? PosClockX.Value : 1232f;
-        internal static bool BlackoutReminderValue => BlackoutReminder != null && BlackoutReminder.Value;
-
-        internal static bool BlackoutToAllValue => BlackoutToAll != null && BlackoutToAll.Value;
         internal static float ClockY => PosClockY != null ? PosClockY.Value : 4592f;
 
         /// <summary>「身份识别组件」是否启用（热读）。</summary>
