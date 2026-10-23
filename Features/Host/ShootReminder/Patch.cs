@@ -1,4 +1,4 @@
-﻿using ClueDetail.Core;
+﻿﻿using ClueDetail.Core;
 using HarmonyLib;
 using Protocol;
 using ServerGamePlayer = Server.Game.Player;
@@ -49,7 +49,20 @@ namespace ClueDetail.Features.Host.ShootReminder
             }
 
             int rel = frame.Time - recorder.Offset;
-            if (rel < 0 || rel % 60 != 10)
+            if (rel < 0)
+            {
+                return;
+            }
+
+            // 拍摄节拍：默认只在「每小时第 2 次」；EveryShot 打开后每次拍摄（10 分钟一帧）都提醒。
+            if (EveryShotValue)
+            {
+                if (rel % 10 != 0)
+                {
+                    return;
+                }
+            }
+            else if (rel % 60 != 10)
             {
                 return;
             }

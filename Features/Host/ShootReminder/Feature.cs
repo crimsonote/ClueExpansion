@@ -1,4 +1,4 @@
-﻿using BepInEx.Configuration;
+﻿﻿using BepInEx.Configuration;
 using ClueDetail.Core;
 
 namespace ClueDetail.Features.Host.ShootReminder
@@ -31,6 +31,9 @@ namespace ClueDetail.Features.Host.ShootReminder
         /// <summary>提醒特效：0 = 全屏黑 2 秒，1 = 绝望炸弹面板 + 心跳声。</summary>
         public static ConfigEntry<int> EffectChoice { get; private set; }
 
+        /// <summary>true = 每次拍摄都提醒；false = 只在每小时第 2 次提醒。</summary>
+        public static ConfigEntry<bool> EveryShot { get; private set; }
+
         public static void Bind(ConfigFile config, string section)
         {
             ToAll = config.Bind(
@@ -47,10 +50,20 @@ namespace ClueDetail.Features.Host.ShootReminder
                 "提醒特效：\n" +
                 "0（默认）= BlackOutVfx（全屏黑 2 秒，干净、无残留）\n" +
                 "1 = MineBombVfx（绝望炸弹面板 + 心跳声，可能残留到大厅）");
+
+            EveryShot = config.Bind(
+                section,
+                "EveryShot",
+                false,
+                "提醒频率：\n" +
+                "false（默认）= 只在每小时第 2 次拍摄提醒（帧时间相对偏移 % 60 == 10）\n" +
+                "true = 每次拍摄都提醒（每 10 分钟一次，帧时间相对偏移 % 10 == 0）");
         }
 
         internal static bool ToAllValue => ToAll != null && ToAll.Value;
 
         internal static int EffectChoiceValue => EffectChoice != null ? EffectChoice.Value : 0;
+
+        internal static bool EveryShotValue => EveryShot != null && EveryShot.Value;
     }
 }

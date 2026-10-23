@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿using BepInEx.Configuration;
+﻿﻿﻿﻿﻿﻿using BepInEx.Configuration;
 using ClueDetail.Core;
 
 namespace ClueDetail.Features.Host.ShadowSabotage
@@ -93,14 +93,14 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             PosIdentifyX = config.Bind(
                 section,
                 "PosIdentifyX",
-                6580f,
-                "身份识别组件破坏点的 X 坐标。默认 6580 = 科学室东西向**过道的最西端死头**（世界格 29,21；再往西 6510 是封死的竖墙）。2026-10-19 改：原默认 6608,4700 落在 Shelf 的实体碰撞盒内（x[6590,6952] y[4494,4784]），玩家走不过去也按不到 E。");
+                9300f,
+                "身份识别组件破坏点的 X 坐标。2026-10-23 起默认 9300 = 用户实测可站的位置（世界格 41,34）。旧默认 6580 在科学室过道西端。");
 
             PosIdentifyY = config.Bind(
                 section,
                 "PosIdentifyY",
-                4900f,
-                "身份识别组件破坏点的 Y 坐标。默认 4900 = 该过道可走带（y≈4790~5120）内的最西端，最近设备 Bio(6730,5033) 净空 200。");
+                7700f,
+                "身份识别组件破坏点的 Y 坐标。2026-10-23 起默认 7700（世界格 41,34）。旧默认 4900 在科学室过道。");
 
             PosClockX = config.Bind(
                 section,
@@ -263,8 +263,8 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             }
         }
 
-        internal static float IdentifyX => PosIdentifyX != null ? PosIdentifyX.Value : 6580f;
-        internal static float IdentifyY => PosIdentifyY != null ? PosIdentifyY.Value : 4900f;
+        internal static float IdentifyX => PosIdentifyX != null ? PosIdentifyX.Value : 9300f;
+        internal static float IdentifyY => PosIdentifyY != null ? PosIdentifyY.Value : 7700f;
         internal static float ClockX => PosClockX != null ? PosClockX.Value : 1000f;
         internal static float ClockY => PosClockY != null ? PosClockY.Value : 3550f;
 
