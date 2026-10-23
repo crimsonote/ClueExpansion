@@ -69,6 +69,15 @@ namespace ClueDetail.Features.Client.ClueCard
         /// <summary>时间文本的横向中心（相对行中心）。</summary>
         public static ConfigEntry<float> WhenX { get; private set; }
 
+        /// <summary>「提出命题」按钮的横向中心（旧版真值 +215；0.1.18 改成 +244）。</summary>
+        public static ConfigEntry<float> SubmitX { get; private set; }
+
+        /// <summary>「提出命题」按钮的宽度（旧版真值 136；0.1.18 改成 100）。</summary>
+        public static ConfigEntry<float> SubmitWidth { get; private set; }
+
+        /// <summary>「提出命题」按钮的高度（旧版真值 64；0.1.18 改成 80）。</summary>
+        public static ConfigEntry<float> SubmitHeight { get; private set; }
+
         /// <summary>是否启用「悬浮显示整句」。</summary>
         public static ConfigEntry<bool> ShowSentence { get; private set; }
 
@@ -97,9 +106,9 @@ namespace ClueDetail.Features.Client.ClueCard
             WhatCardSize = config.Bind(
                 section,
                 "WhatCardSize",
-                72f,
+                80f,
                 new ConfigDescription(
-                    "活动卡面的边长（正方形，单位 = prefab 像素）。",
+                    "活动卡面的边长（正方形，单位 = prefab 像素）。\n真值 = 0.1.17a 的 ClueWhatImage 80×80。",
                     new AcceptableValueRange<float>(16f, 200f)));
 
             ShowLine = config.Bind(
@@ -107,7 +116,7 @@ namespace ClueDetail.Features.Client.ClueCard
                 "ShowLine",
                 true,
                 "是否显示那条分隔竖线（黄条）。\n" +
-                "⚠️ 它是 0.1.18 新加的 —— **旧版图标视图里没有它**；\n" +
+                "0.1.17a 的旧 prefab 里也有这条线（ClueIconLine @-54，4×80），不是 0.1.18 新增。\n" +
                 "想更贴近旧版观感就设成 false（关掉后图标视图与悬浮视图都不会出现它）。");
 
             GuessWhatCard = config.Bind(
@@ -123,7 +132,7 @@ namespace ClueDetail.Features.Client.ClueCard
             RoomX = config.Bind(
                 section,
                 "RoomX",
-                -155f,
+                -135f,
                 new ConfigDescription(
                     "房间卡与房间名的横向中心（相对整行中心，向左为负）。",
                     new AcceptableValueRange<float>(-298f, 298f)));
@@ -139,27 +148,51 @@ namespace ClueDetail.Features.Client.ClueCard
             WhatX = config.Bind(
                 section,
                 "WhatX",
-                -15f,
+                -8f,
                 new ConfigDescription(
-                    "活动卡面的横向中心（相对整行中心）。默认落在**分隔竖线右侧**、时间左侧。",
+                    "活动卡面的横向中心（相对整行中心）。\n真值 = 0.1.17a 的 ClueWhatImage @ (-8, 0)（0.1.18 删了这个节点）。",
                     new AcceptableValueRange<float>(-298f, 298f)));
 
             LineX = config.Bind(
                 section,
                 "LineX",
-                -60f,
+                -54f,
                 new ConfigDescription(
-                    "分隔竖线（那条黄条）的横向中心：默认在房间与活动卡面之间。\n" +
+                    "分隔竖线（那条黄条）的横向中心。\n真值 = -54（0.1.17a 与 0.1.18 都有，4×80，位于房间卡与活动卡面之间）。\n" +
                     "悬浮显示整句时它（以及整块图标区）会被隐藏。",
                     new AcceptableValueRange<float>(-298f, 298f)));
 
             WhenX = config.Bind(
                 section,
                 "WhenX",
-                100f,
+                113f,
                 new ConfigDescription(
                     "时间文本的横向中心。",
                     new AcceptableValueRange<float>(-298f, 298f)));
+
+            SubmitX = config.Bind(
+                section,
+                "SubmitX",
+                244f,
+                new ConfigDescription(
+                    "「提出命题」按钮的横向中心。默认 = **旧 prefab 真值 +215**（0.1.18 改成 +244）。",
+                    new AcceptableValueRange<float>(-298f, 298f)));
+
+            SubmitWidth = config.Bind(
+                section,
+                "SubmitWidth",
+                100f,
+                new ConfigDescription(
+                    "「提出命题」按钮的宽度。默认 = **旧 prefab 真值 136**（0.1.18 改成 100）。",
+                    new AcceptableValueRange<float>(40f, 300f)));
+
+            SubmitHeight = config.Bind(
+                section,
+                "SubmitHeight",
+                80f,
+                new ConfigDescription(
+                    "「提出命题」按钮的高度。默认 = **旧 prefab 真值 64**（0.1.18 改成 80）。",
+                    new AcceptableValueRange<float>(20f, 200f)));
 
             ShowSentence = config.Bind(
                 section,
@@ -171,7 +204,7 @@ namespace ClueDetail.Features.Client.ClueCard
             SentenceX = config.Bind(
                 section,
                 "SentenceX",
-                -25.3f,
+                -10f,
                 new ConfigDescription(
                     "整句文本框的横向中心（相对整行中心）。默认 = 旧版 ClueText 节点的 -25.3。",
                     new AcceptableValueRange<float>(-298f, 298f)));
@@ -179,7 +212,7 @@ namespace ClueDetail.Features.Client.ClueCard
             SentenceWidth = config.Bind(
                 section,
                 "SentenceWidth",
-                350f,
+                380f,
                 new ConfigDescription(
                     "整句文本框的宽度。默认 = 旧版 ClueText 节点的 350（高度固定 100，同一份 prefab 值）。",
                     new AcceptableValueRange<float>(100f, 596f)));
@@ -220,11 +253,17 @@ namespace ClueDetail.Features.Client.ClueCard
                 return;
             }
 
-            WhatX.Value = -15f;
-            LineX.Value = -60f;
-            WhenX.Value = 100f;
-            SentenceX.Value = -25.3f;
-            SentenceWidth.Value = 350f;
+            RoomX.Value = -135f;
+            WhatX.Value = -8f;
+            WhatCardSize.Value = 80f;
+            ShowLine.Value = true;
+            LineX.Value = -54f;
+            WhenX.Value = 113f;
+            SubmitX.Value = 244f;
+            SubmitWidth.Value = 100f;
+            SubmitHeight.Value = 80f;
+            SentenceX.Value = -10f;
+            SentenceWidth.Value = 380f;
             SentenceFontSize.Value = 16f;
             GuessWhatCard.Value = false;
             config.Save();

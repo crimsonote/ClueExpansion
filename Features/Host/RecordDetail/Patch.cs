@@ -72,6 +72,19 @@ namespace ClueDetail.Features.Host.RecordDetail
             /// </remarks>
             private static void Postfix(ServerDevice __instance, GamePlayer player, Define.EWhatState state)
             {
+                StampWhat(__instance, player, state);
+            }
+
+            /// <summary>
+            /// 把「详细活动」写进服务端 <c>ClueList</c> 里刚写 / 刚更新的那些对象（未知字段 100）。
+            /// </summary>
+            /// <remarks>
+            /// 抽成独立方法是因为 <c>ClueMerge</c> 的自定义合并窗口会**整替**
+            /// <c>RecordLastUsingPlayer</c> —— 那时本补丁的 Postfix 不会跑，
+            /// 由接管方（<c>Features/Host/ClueMerge/Patch.cs</c>）显式调用本方法补上职责。
+            /// </remarks>
+            internal static void StampWhat(ServerDevice __instance, GamePlayer player, Define.EWhatState state)
+            {
                 if (!FeatureLoader.Enabled<RecordDetailFeature>()) return;
                 if (__instance == null || player == null || !RoomState.HostBroadcast)
                 {

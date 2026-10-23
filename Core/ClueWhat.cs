@@ -25,6 +25,66 @@ namespace ClueDetail.Core
         }
 
         /// <summary>
+        /// **只给卡片图像用**的解析：在 <see cref="Resolve"/> 之外，额外把「黑幕切断了电力」映射成电闸。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// 为什么要单独一个入口：11037（<c>Define.MASTERMIND_SABOTAGE_ID</c>）在 <see cref="TryResolve"/>
+        /// 里是**故意拒绝**的（⓪.1 守卫）—— 它不是一个"设备活动"，原版句式已经把它渲染成
+        /// 「切断了电力」，若让文本走活动替换，会去贴该房间某台设备平时的活动（那是错的）。
+        /// </para>
+        /// <para>
+        /// 但**图像**那一格不该留空：旧版这里显示的就是"破坏电闸"这台设备的卡面，
+        /// 而 0.1.18 的资源里 <c>WFusebox_card</c> 确实存在（没有房间变体，只有一张）。
+        /// 所以卡面单独走这一条：文本保持原版，图用电闸。
+        /// </para>
+        /// </remarks>
+        public static EWhatType ResolveForCard(ClueManager.Clue clue)
+        {
+            EWhatType what = Resolve(clue);
+            if (what != EWhatType.WNone)
+            {
+                return what;
+            }
+
+            if (clue == null || clue.Info == null)
+            {
+                return EWhatType.WNone;
+            }
+
+            // 「销毁了证据」（11038 主谋 / 66613 黑，Define.IsDestroyEvidenceClue :95774）：
+            // **文本保持原版**（TryResolve ⓪ 已拒绝），但卡面必须是**被销毁的那台设备**。
+            // 设备号来自 S_ADD_CLUE 自带的 DeviceId —— ClueRender 的 Prefix 已把它记进
+            // ActivityMap（键 = 线索的 PlayerId/Time/RoomId，角色线索同样适用）。
+            if (Define.IsDestroyEvidenceClue(clue.Info))
+            {
+                EWhatType byDevice = ActivityMap.WhatOfDevice(
+                    ActivityMap.DeviceOf(clue.Info.PlayerId, clue.Info.Time, clue.Info.RoomId));
+                if (byDevice != EWhatType.WNone)
+                {
+                    return byDevice;
+                }
+
+                // 兜底：房主本机不走镜像（客户端 Handle_S_ADD_CLUE 直接跳过房主），
+                // 或扫描配对失败时，房间只剩一种活动才敢用。
+                var candidates = RoomDeviceScan.CandidatesOf(clue.Info.RoomId);
+                if (candidates.Count == 1)
+                {
+                    return candidates[0];
+                }
+
+                return EWhatType.WNone;
+            }
+
+            if (clue.Info.PlayerId == Define.MASTERMIND_SABOTAGE_ID)
+            {
+                return EWhatType.WFusebox;
+            }
+
+            return EWhatType.WNone;
+        }
+
+        /// <summary>
         /// 解析详细活动。<paramref name="ambiguous"/> 为 true 表示"知道房间里有活动，但不止一种"，
         /// 此时 <paramref name="what"/> 无意义。
         /// </summary>
@@ -62,6 +122,23 @@ namespace ClueDetail.Core
             if (Define.IsDestroyEvidenceClue(clue.Info))
             {
                 Diagnostics.TraceClue(roomId, playerId, time, 0, false, "销毁证据线索（保持原版）");
+                return false;
+            }
+            // ⓪.1 **角色级**的另一半：黑幕「切断了电力」（11037）。
+            // 既来自原版撤电闸 —— Device.RecordLastUsingPlayer 的 EWhatState.Mastermind
+            // 把它写成 `playerId = 11037`（0.1.18 :166397），也来自我们的隐蔽破坏点
+            // （ShadowSabotage/Logic.cs:1216）。两者形状完全一致：PlayerId=11037、
+            // **不带 WhatType、不带未知字段**（原版一直如此：0.1.17a/0.1.18 都用默认 WNone）。
+            // 0.1.18 对这一段渲染 GetRoleWhatKey(11037) → Define.WHAT_CUT_POWER =「切断了电力」
+            // （:27517 / :27379 / 常量 :94591）；若不在最前面挡掉，②/③/④ 会把**该房间某台设备
+            // 平时的活动**（例如「翻找了书架」）贴到"切断了电力"上 —— 那既不是旧版行为
+            // （旧版这里读的是 clue.Info.WhatType，本就是 WNone），也不是现版语义。
+            // 判据直接用游戏自己的 Define.IsRoleClueId（0.1.18 :95765）= {11037, 11038, 66613}：
+// ⓪ 已单独接住后两者，这里实际接住 11037；用谓词而不是字面量，将来加 id 也不会漏。
+            // ⚠️ 2026-10-19 由线索文本管线评估查出（F1）：此前只有 ⓪，11037 会掉到 ③/④。
+            if (Define.IsRoleClueId(playerId))
+            {
+                Diagnostics.TraceClue(roomId, playerId, time, 0, false, "黑幕切断电力线索（保持原版）");
                 return false;
             }
 
@@ -151,24 +228,31 @@ namespace ClueDetail.Core
         }
 
         /// <summary>
-        /// 把句子里 <c>{what}</c> 那一段**换成真实活动**（= 还原 0.1.17a 的行为）。
+        /// 把真实活动拼进句子里（= 还原 0.1.17a 的行为）。
         /// </summary>
         /// <remarks>
-        /// ⚠️ 2026-10-18 修正：本模块最早的实现是「在句末标点前**插入**一段活动」，
-        /// 那是基于一个**错误的前提** —— 以为 0.1.18 把句子模板里的 <c>{what}</c> 删了。
-        /// 实际读 0.1.18 的 <c>Util.FormatProposition</c>（:27343）：<c>{what}</c> 分支**还在**，
-        /// 只是内容从 <c>clue.Info.WhatType.ToString()</c>（每台设备的具体活动，0.1.17a :27332）
-        /// 降级成了 <c>GetRoleWhatKey(clue.Info.PlayerId)</c>（:27517）——
-        /// 一个**角色级的两选一**：黑幕（11037）⇒ <c>WhatCutPower</c>，
-        /// 其余所有人 ⇒ <c>WhatDestroyEvidence</c>。
         /// <para>
-        /// 所以正确做法是**替换那一段**，而不是再插一段
-        /// （后者会显示成「…在 科学室 销毁了证据 操作了电脑。」）。
+        /// ⚠️ <b>2026-10-19 定案（前两次结论都错了，这次是拿 0.1.18 运行时真实文案核的）</b>：
+        /// 句子模板是**两族**，取自 <c>Managers.GetText("PropositionSentence" + 角色名)</c>
+        /// 或 <c>"PropositionSentenceRole" + 角色名</c>（<c>Util.GetPropositionSentence</c> :27510，
+        /// 拼接时后缀在前、角色名在后）。两族在 0.1.18 的文案**不一样**：
+        /// </para>
+        /// <list type="bullet">
+        /// <item><c>PropositionSentence{角色}</c>（**普通线索**，<c>IsRoleClueId == false</c>）：
+        /// 「…在{when}\n**位于{where}**。」—— <b>模板里根本没有 <c>{what}</c></b>；</item>
+        /// <item><c>PropositionSentenceRole{角色}</c>（**角色线索** 11037/11038/66613）：
+        /// 「…在{when}\n**于{where}{what}**。」—— 仍带 <c>{what}</c>。</item>
+        /// </list>
+        /// <para>
+        /// 所以 <c>Util.FormatProposition</c>（:27343）的 <c>case "what"</c> 分支**只在角色线索上**会执行；
+        /// 普通线索的 <c>{what}</c> 是在**文案层**被删掉的 —— 光看代码会误以为没删
+        ///（这也是本模块 10-18 记成"模板没删 {what}"的原因：那份数据表是旧版残留）。
         /// </para>
         /// <para>
-        /// 定位方式刻意不依赖旧文本：0.1.18 在 <c>{what}</c> 处渲染的一定是
-        /// <c>&lt;#FF97AB&gt;…&lt;/color&gt;</c>，而<b>整句里只会有这一处</b>这个颜色标记，
-        /// 所以按颜色标记替换即可，不需要反射私有的 <c>GetRoleWhatKey</c>。
+        /// 本次处理：
+        /// ① 句子里有 <c>&lt;#FF97AB&gt;…&lt;/color&gt;</c>（角色线索）⇒ **替换**那一段；
+        /// ② 否则命中「位于{where}」（普通线索）⇒ 把「位于」还原成旧版的「于」，
+        /// 并在地点后**插入**活动 —— 等价于 0.1.17a 的「于{where}{what}。」句式。
         /// </para>
         /// </remarks>
         public static bool TryDecorate(string sentence, ClueManager.Clue clue, out string result)
@@ -191,16 +275,39 @@ namespace ClueDetail.Core
             }
 
             System.Text.RegularExpressions.Match match = WhatSegment.Match(sentence);
-            if (!match.Success)
+            if (match.Success)
+            {
+                // ① 角色线索：模板里有 {what}，替换那段颜色标记即可。
+                result = sentence.Substring(0, match.Index)
+                         + "<#FF97AB>" + text + "</color>"
+                         + sentence.Substring(match.Index + match.Length);
+                return true;
+            }
+
+            // ② 普通线索：0.1.18 的文案只到「位于{where}。」，没有活动占位符。
+            //    把「位于」还原成旧版的「于」，并在地点后面插入活动（= 0.1.17a 的「于{where}{what}。」）。
+            System.Text.RegularExpressions.Match located = LocatedSegment.Match(sentence);
+            if (!located.Success)
             {
                 return false;
             }
 
-            result = sentence.Substring(0, match.Index)
+            result = sentence.Substring(0, located.Index)
+                     + "于" + located.Groups["where"].Value
                      + "<#FF97AB>" + text + "</color>"
-                     + sentence.Substring(match.Index + match.Length);
+                     + sentence.Substring(located.Index + located.Length);
             return true;
         }
+
+        /// <summary>
+        /// 0.1.18 普通线索模板里的地点段：「位于」+ 渲染后的房间名（带 <c>&lt;#FFBE61&gt;</c> 色号）。
+        /// </summary>
+        /// <remarks>
+        /// 用「位于」当锚点是安全的：<c>{who}</c> / <c>{when}</c> 也渲染成 <c>&lt;#FFBE61&gt;</c>，
+        /// 但只有地点前面会出现「位于」二字（旧版是「于」）。
+        /// </remarks>
+        private static readonly System.Text.RegularExpressions.Regex LocatedSegment =
+            new System.Text.RegularExpressions.Regex("位于(?<where><#FFBE61>[^<]*</color>)");
 
         /// <summary>
         /// <c>{what}</c> 在渲染结果里的样子（0.1.18 的固定色号）。

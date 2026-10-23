@@ -49,6 +49,58 @@ namespace ClueDetail.Core
         /// </remarks>
         public const int WhatFieldNumber = 100;
 
+        /// <summary>
+        /// 「显示时刻」的字段号（秒，覆盖写）。只在**时钟破坏点已破坏期间**写进去，
+        /// 由出站口（`Server.Game.HostPeerSession.Send`）把线索的 `Time` 换成它。
+        /// </summary>
+        /// <remarks>
+        /// <b>为什么不直接改 `Time`</b>：`Time` 参与原版 30 秒去重窗口
+        /// （`RecordLastUsingPlayer` 的 `x.Time &gt;= limitTime`，0.1.18 :166405）——
+        /// 把它改成更早的冻结时刻，会让"先删后加"的合并**永不命中**，同一台设备的线索会重复追加。
+        /// 所以真值保持真实时间，另存一份"该显示成几点"，只在**出站副本**上替换。
+        /// <para>
+        /// 为什么是 101：100 已被「详细活动」占用（见 <see cref="WhatFieldNumber"/>），
+        /// 101 紧邻它、同样落在没人用的租用区；未装本模块的客户端照旧忽略它。
+        /// </para>
+        /// </remarks>
+        public const int DisplayTimeFieldNumber = 101;
+
+        /// <summary>写入「显示时刻」（覆盖写，幂等）。</summary>
+        public static bool SetDisplayTime(IMessage message, int time)
+        {
+            return time != 0 && ReplaceValue(message, DisplayTimeFieldNumber, time);
+        }
+
+        /// <summary>读取「显示时刻」；0 = 这条线索没有被污染。</summary>
+        public static int GetDisplayTime(IMessage message)
+        {
+            return TryGetValue(message, DisplayTimeFieldNumber, out int value) ? value : 0;
+        }
+
+        /// <summary>
+        /// 「真实当事人」的字段号：身份污染把线索真值写成 <c>PlayerId = 0</c>（对外「某人」）时，
+        /// 把**真正操作的人**记在这里，供出站口按收件人还原 —— 当事人自己看自己的线索应当是实名。
+        /// </summary>
+        /// <remarks>
+        /// ⚠️ 这个字段**只存在于服务端真值**：出站副本上会被清零
+        /// （<c>ShadowSabotage/Wire.cs</c> 的 <c>RewriteOutflow</c>），
+        /// 否则装了本模块的"别人"可以自己读出当事人是谁。
+        /// 与 101 一样落在没人用的租用区（100 = 详细活动、101 = 显示时刻）。
+        /// </remarks>
+        public const int RealOwnerFieldNumber = 103;
+
+        /// <summary>写入「真实当事人」（覆盖写，幂等；传 0 = 抹掉，出站时用）。</summary>
+        public static bool SetRealOwner(IMessage message, int playerId)
+        {
+            return ReplaceValue(message, RealOwnerFieldNumber, playerId);
+        }
+
+        /// <summary>读取「真实当事人」；0 = 没有记录。</summary>
+        public static int GetRealOwner(IMessage message)
+        {
+            return TryGetValue(message, RealOwnerFieldNumber, out int value) ? value : 0;
+        }
+
         private static readonly Dictionary<Type, FieldInfo> SetFieldCache = new Dictionary<Type, FieldInfo>();
         private static readonly Dictionary<Type, FieldInfo> FieldsFieldCache = new Dictionary<Type, FieldInfo>();
         private static readonly Dictionary<Type, MethodInfo> GetOrAddFieldCache = new Dictionary<Type, MethodInfo>();
@@ -79,6 +131,57 @@ namespace ClueDetail.Core
 
             ClearValue(message, WhatFieldNumber);
             return SetValue(message, WhatFieldNumber, what);
+        }
+
+        /// <summary>覆盖写任意字段号（先清掉旧值，避开未知字段 varintList 的追加语义）。</summary>
+        public static bool ReplaceValue(IMessage message, int fieldNumber, int value)
+        {
+            if (message == null || value == 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                Type type = message.GetType();
+                FieldInfo setField = SetFieldOf(type);
+                FieldInfo fieldsField = FieldsFieldOf(type);
+                MethodInfo getOrAdd = GetOrAddFieldOf(type);
+                if (setField == null || fieldsField == null || getOrAdd == null)
+                {
+                    return false;
+                }
+
+                object set = setField.GetValue(message) ?? Activator.CreateInstance(setField.FieldType, true);
+                if (!(fieldsField.GetValue(set) is IDictionary fields))
+                {
+                    return false;
+                }
+
+                // ⚠️ 2026-10-20：**不能**写成 ClearValue + SetValue。
+                // 离线往返实测：同一字段第二次调用时，ClearValue 移除条目后 SetValue 的
+                // GetOrAddField 写入会失效，读回 0（第一次写却正常）。
+                // 这就是「线索第一次记录能冻结、合并刷新后时间又变回真实」的根因。
+                // 这里直接构造一个新的 UnknownField 覆盖旧条目，一步到位。
+                Type fieldType = getOrAdd.ReturnType;
+                object field = Activator.CreateInstance(fieldType, true);
+                MethodInfo addVarint = fieldType.GetMethod(
+                    "AddVarint", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (addVarint == null)
+                {
+                    return false;
+                }
+
+                addVarint.Invoke(field, new object[] { (ulong)value });
+                fields[fieldNumber] = field;
+                setField.SetValue(message, set);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Exception(ex, "覆盖未知字段失败（字段号 " + fieldNumber + "）");
+                return false;
+            }
         }
 
         public static bool SetValue(IMessage message, int fieldNumber, int value)

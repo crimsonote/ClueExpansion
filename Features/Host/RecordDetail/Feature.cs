@@ -1,4 +1,4 @@
-﻿using BepInEx.Configuration;
+﻿﻿using BepInEx.Configuration;
 using ClueDetail.Core;
 using ClueDetail.Core.Net;
 
@@ -43,6 +43,16 @@ namespace ClueDetail.Features.Host.RecordDetail
                 "这是「房主主动关闭」与「房主根本没装本模块」的区别所在。");
 
             RoomState.HostBroadcast = BroadcastDetail.Value;
+
+            // ⚠️ 2026-10-19 加：这一项一旦是 false，**全房（含房主自己）都不显示活动**，
+            // 而 .cfg 里的值会跨版本保留（默认值后来改成 true 也不会覆盖已存在的键）⇒
+            // 实机里因此出现过"活动与设备都不见了"的排查。启动时明写一行，值不再隐形。
+            global::ClueDetail.Core.Log.Info(
+                "线索详细活动下发：" +
+                (BroadcastDetail.Value
+                    ? "开（装本模块的客户端可还原「…于{地点}{活动}」）"
+                    : "关 ★ 全房都不显示活动，连房主自己也一样；要恢复请在 CONFIG 页「线索拓展」标签里拨开「线索详细活动」，或把 .cfg 里 [ClueRecordDetail] BroadcastDetail 改成 true（改文件后需重载配置/重启，页面开关是热生效）。"));
+
             BroadcastDetail.SettingChanged += (_, __) =>
             {
                 RoomState.HostBroadcast = BroadcastDetail.Value;
@@ -74,6 +84,14 @@ namespace ClueDetail.Features.Host.RecordDetail
 
         private static void NotifyClients()
         {
+            // ⚠️ 2026-10-19 实机日志里出现过「详细活动：状态广播失败（NRE）」：
+            // 热开启时常常还没进房 ⇒ 根本没有可发的对象，那不是故障。
+            // 不先判一下的话，日志会把"没人可发"误导成"广播坏了"。
+            if (global::Server.Game.GameRoom.Instance == null)
+            {
+                return;
+            }
+
             try
             {
                 CdWire.BroadcastState();

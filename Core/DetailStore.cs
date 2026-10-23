@@ -25,18 +25,59 @@ namespace ClueDetail.Core
         {
             if (what != 0)
             {
-                Map[Key(playerId, time, roomId)] = what;
+                ResetIfNewRound(time);
+
+            Map[Key(playerId, time, roomId)] = what;
             }
         }
 
         public static int Recall(int playerId, int time, int roomId)
         {
+            ResetIfNewRound(time);
+
             return Map.TryGetValue(Key(playerId, time, roomId), out int what) ? what : 0;
         }
+
+        /// <summary>本局见过的最大 SurviveTime：识别"换局"（键里带 Time，每局从 0 重算）。</summary>
+
+        private static int _roundMaxTime;
+
+
+        /// <summary>明显时间回退 ⇒ 换局了，清掉上一局的旁路表（2026-10-19 修：Clear 此前从未被调用）。</summary>
+
+        private static void ResetIfNewRound(int time)
+
+        {
+
+            if (time + 60 < _roundMaxTime)
+
+            {
+
+                Clear();
+
+                _roundMaxTime = time;
+
+                return;
+
+            }
+
+
+            if (time > _roundMaxTime)
+
+            {
+
+                _roundMaxTime = time;
+
+            }
+
+        }
+
 
         public static void Clear()
         {
             Map.Clear();
+
+            _roundMaxTime = 0;
         }
     }
 }

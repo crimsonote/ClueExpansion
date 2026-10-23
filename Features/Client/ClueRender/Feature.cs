@@ -33,6 +33,17 @@ namespace ClueDetail.Features.Client.ClueRender
         side: FeatureSide.Client)]
     internal partial class ClueRenderFeature
     {
+        /// <summary>
+        /// 是否把「活动不同」的线索视为**不同条目**（还原 0.1.17a 的口径）。
+        /// </summary>
+        /// <remarks>
+        /// 0.1.17a 的 <c>ClueManager.AlreadyExistClue</c>（:27570）会比较 <c>WhatType</c>，
+        /// 所以"同一人 / 同一房间 / 同一时刻但活动不同"的两条**各留一条**；
+        /// 0.1.18 把该字段删了，判定只剩 <c>(PlayerId, RoomId, Time)</c>（:27611），活动不同的两条会被
+        /// 当成同一条、后到的被丢弃。本项把那一维补回来（活动取未知字段 100，其次看破坏期标记 101）。
+        /// </remarks>
+        public static ConfigEntry<bool> DistinctByActivity { get; private set; }
+
         public static void Bind(ConfigFile config, string section)
         {
             SelfCapture.Enabled = config.Bind(
@@ -41,6 +52,17 @@ namespace ClueDetail.Features.Client.ClueRender
                 true,
                 "房主没有安装本模块时，客户端自行记录「线索 ↔ 设备」的关联，用来反查该线索的详细活动。\n" +
                 "房主装了本模块时会由服务端下发，本项不起作用；房主装了但关闭下发时，本项会被强制停用。");
+
+            DistinctByActivity = config.Bind(
+                section,
+                "DistinctByActivity",
+                true,
+                "「活动不同」的两条线索算不算同一条（决定后到的那条是被丢弃还是另起一条）。\n" +
+                "0.1.17a 的 ClueManager.AlreadyExistClue（:27570）会比较 WhatType ⇒ 活动不同就各留一条；\n" +
+                "0.1.18 把该字段删了，判定只剩 (PlayerId, RoomId, Time)（:27611）⇒ 活动不同的两条会被当成同一条。\n" +
+                "⚠️ 时间污染期间多条线索的**显示时刻**会被改写成同一个冻结值，此时本项尤其重要\n" +
+                "（同房间两台设备 + 同一个人 ⇒ 不开就只剩一条）。默认 true = 还原 0.1.17a；\n" +
+                "关掉则完全按 0.1.18 口径（同名条目只保留先到的那条）。");
 
             Diagnostics.LogClueResolution = config.Bind(
                 section,

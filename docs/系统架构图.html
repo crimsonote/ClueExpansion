@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClueDetail 系统架构图（基准 0.1.18 · 2026-10-19）</title>
+<style>
+  :root{
+    --bg:#0e1015; --panel:#151922; --panel2:#1b2130; --line:#2a3140;
+    --fg:#e7eaf0; --dim:#98a2b3; --acc:#ffbe61; --blue:#6ea8fe;
+    --green:#5fd3a6; --red:#ff7a85; --purple:#b58cff;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--fg);margin:0;padding:28px 30px 60px;
+       font:14px/1.65 "Microsoft YaHei","PingFang SC","Noto Sans SC",system-ui,sans-serif}
+  h1{font-size:22px;margin:0 0 6px}
+  h1 small{font-size:13px;color:var(--dim);font-weight:400;margin-left:10px}
+  h2{font-size:16px;color:var(--acc);margin:34px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  p.note{color:var(--dim);margin:6px 0 0;font-size:13px}
+  svg{width:100%;height:auto;display:block;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  text{font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif}
+  .box{fill:var(--panel2);stroke:var(--line);stroke-width:1.2;rx:8}
+  .boxHost{fill:#1d2536;stroke:var(--blue)}
+  .boxCli{fill:#16261f;stroke:var(--green)}
+  .boxCore{fill:#1f1c2b;stroke:var(--purple)}
+  .boxWarn{fill:#2b1f24;stroke:var(--red)}
+  .boxPkt{fill:#2b2416;stroke:var(--acc)}
+  .boxGame{fill:#182430;stroke:#4b6f8f}
+  .dash{fill:none;stroke:var(--line);stroke-dasharray:5 5;rx:10}
+  .ti{fill:#fff;font-size:13.5px;font-weight:600}
+  .tz{fill:var(--fg);font-size:12.5px}
+  .ts{fill:var(--dim);font-size:11.5px}
+  .mono{font-family:Consolas,"Cascadia Mono",monospace;font-size:11.5px;fill:var(--blue)}
+  .monoG{font-family:Consolas,"Cascadia Mono",monospace;font-size:11.5px;fill:var(--green)}
+  .monoA{font-family:Consolas,"Cascadia Mono",monospace;font-size:11.5px;fill:var(--acc)}
+  .monoR{font-family:Consolas,"Cascadia Mono",monospace;font-size:11.5px;fill:var(--red)}
+  .fl{stroke:var(--dim);stroke-width:1.4;fill:none}
+  .flA{stroke:var(--acc);stroke-width:1.5;fill:none}
+  .flG{stroke:var(--green);stroke-width:1.5;fill:none;stroke-dasharray:6 4}
+  .lbl{fill:var(--dim);font-size:11px}
+  table{border-collapse:collapse;width:100%;margin-top:10px;font-size:13px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--acc);font-weight:600;white-space:nowrap}
+  td.en{font-family:Consolas,"Cascadia Mono",monospace;color:var(--blue)}
+  tr:nth-child(even) td{background:#12161e}
+  .tag{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11.5px;border:1px solid var(--line);color:var(--dim)}
+  .tagH{border-color:var(--blue);color:var(--blue)}
+  .tagC{border-color:var(--green);color:var(--green)}
+  .tagB{border-color:var(--acc);color:var(--acc)}
+  footer{color:var(--dim);font-size:12.5px;margin-top:34px}
+  code{font-family:Consolas,"Cascadia Mono",monospace;color:var(--blue)}
+</style>
+</head>
+<body>
+
+<h1>ClueDetail 系统架构图<small>游戏基准 0.1.18 · 生成于 2026-10-19</small></h1>
+<p class="note">
+  图中 <span class="mono">英文等宽字</span> = 游戏 / 本项目里的**真实类型与方法名**（可在反编译源码与 DLL 里逐个核对）；
+  紧随其后的中文 = 它的**作用**（代词标注）。行号锚点见 <code>docs/游戏API锚点.md</code>。
+</p>
+
+<!-- ══════════════════════ ① 分层 ══════════════════════ -->
+<h2>① 插件分层（依赖只能向下）</h2>
+<svg viewBox="0 0 1200 640" role="img" aria-label="ClueDetail 分层架构">
+  <defs>
+    <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#98a2b3"/>
+    </marker>
+    <marker id="a1h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ffbe61"/>
+    </marker>
+  </defs>
+
+  <!-- Plugin -->
+  <rect class="box boxHost" x="20" y="16" width="1160" height="54"/>
+  <text class="mono" x="36" y="38">Plugin.cs</text>
+  <text class="tz" x="120" y="38">装配根 —— 只做组装，不含玩法逻辑；每帧 <tspan class="mono">Plugin.Update → ApplyPending</tspan>（把热开关的生命周期回调挪到主线程）</text>
+  <text class="ts" x="36" y="58">对外入口：<tspan class="mono">OnLoaded / OnPatched / OnEnabled / OnDisabled</tspan>（可选钩子，按方法名约定）</text>
+
+  <line class="fl" x1="600" y1="70" x2="600" y2="94" marker-end="url(#a1)"/>
+
+  <!-- Core -->
+  <rect class="dash" x="20" y="96" width="1160" height="132"/>
+  <text class="tz" x="34" y="116"><tspan class="ti">Core/ 内核</tspan> —— 不认识任何具体功能；命名空间扁平化为 <tspan class="mono">ClueDetail.Core</tspan>（避免遮蔽游戏全局命名空间里的 <tspan class="mono">Log</tspan>）</text>
+
+  <g>
+    <rect class="box boxCore" x="34" y="130" width="152" height="82"/>
+    <text class="mono" x="44" y="150">FeatureLoader</text>
+    <text class="tz" x="44" y="169">反射装载</text>
+    <text class="ts" x="44" y="186">热开关判断（每次读 cfg）</text>
+    <text class="ts" x="44" y="202">逐个 PatchAll 挂载</text>
+
+    <rect class="box boxCore" x="200" y="130" width="152" height="82"/>
+    <text class="mono" x="210" y="150">Log</text>
+    <text class="tz" x="210" y="169">日志门面</text>
+    <text class="ts" x="210" y="186">泛型重载 / 会话 id</text>
+    <text class="ts" x="210" y="202">WebUI 环形缓冲</text>
+
+    <rect class="box boxCore" x="366" y="130" width="152" height="82"/>
+    <text class="mono" x="376" y="150">Json</text>
+    <text class="tz" x="376" y="169">JSON 唯一出口</text>
+    <text class="ts" x="376" y="186">Newtonsoft / camelCase</text>
+    <text class="ts" x="376" y="202">禁止手拼 JSON</text>
+
+    <rect class="box boxCore" x="532" y="130" width="152" height="82"/>
+    <text class="mono" x="542" y="150">UnknownFields</text>
+    <text class="tz" x="542" y="169">protobuf 未知字段</text>
+    <text class="ts" x="542" y="186">字段 <tspan class="mono">100</tspan> = 详细活动</text>
+    <text class="ts" x="542" y="202">字段 <tspan class="mono">101</tspan> = 显示时刻</text>
+
+    <rect class="box boxCore" x="698" y="130" width="152" height="82"/>
+    <text class="mono" x="708" y="150">Net/CdWire</text>
+    <text class="tz" x="708" y="169">自定义协议</text>
+    <text class="ts" x="708" y="186">opcode 段 61000+</text>
+    <text class="ts" x="708" y="202">裸字节出口</text>
+
+    <rect class="box boxCore" x="864" y="130" width="152" height="82"/>
+    <text class="mono" x="874" y="150">DetailStore</text>
+    <text class="tz" x="874" y="169">房主旁路表</text>
+    <text class="ts" x="874" y="186">键 (玩家, 时间, 房间)</text>
+    <text class="ts" x="874" y="202">→ 详细活动兜底</text>
+
+    <rect class="box boxCore" x="1030" y="130" width="136" height="82"/>
+    <text class="mono" x="1040" y="150">ClientCapability</text>
+    <text class="ts" x="1040" y="169">谁装了本模块</text>
+    <text class="mono" x="1040" y="190">RoomState</text>
+    <text class="ts" x="1040" y="207">跟随房主开关</text>
+  </g>
+
+  <line class="fl" x1="600" y1="228" x2="600" y2="252" marker-end="url(#a1)"/>
+
+  <!-- Patches -->
+  <rect class="dash" x="20" y="254" width="1160" height="222"/>
+  <text class="tz" x="34" y="274"><tspan class="ti">Patches/ 功能域</tspan> —— 每个补丁入口第一行都是 <tspan class="mono">if (!FeatureLoader.Enabled&lt;本功能&gt;()) return;</tspan>（热开关的全部来源）</text>
+
+  <g>
+    <rect class="box boxCli" x="34" y="288" width="252" height="174"/>
+    <text class="ti" x="46" y="310">Features/Both 双端</text>
+    <text class="mono" x="46" y="334">CdProtocol</text>
+    <text class="ts" x="46" y="351">能力握手 / 房主开关同步</text>
+    <text class="mono" x="46" y="375">SelfCheck</text>
+    <text class="ts" x="46" y="392">启动自检（未知字段真写真读）</text>
+    <text class="ts" x="46" y="420">开关三层：总开关 / 段开关 /</text>
+    <text class="ts" x="46" y="437">子配置（全部热更新，改 cfg 即生效）</text>
+
+    <rect class="box boxHost" x="300" y="288" width="404" height="186"/>
+    <text class="ti" x="312" y="310">Features/Host 房主侧（服务器权威）</text>
+    <text class="monoA" x="312" y="334">ShadowSabotage</text>
+    <text class="ts" x="312" y="351">隐蔽破坏点：两只伪装小熊 + 线索污染 + 电闸窗口封锁</text>
+    <text class="mono" x="312" y="375">RecordDetail</text>
+    <text class="ts" x="312" y="392">详细活动写入服务端 + 经自定义协议下发</text>
+    <text class="mono" x="312" y="416">SpectatorScan</text>
+    <text class="ts" x="312" y="433">放行旁观者的设备扫描</text>
+    <text class="mono" x="312" y="456">SecondVote</text>
+    <text class="ts" x="312" y="473">投出黑幕 → 立即重开一轮投票</text>
+
+    <rect class="box boxCli" x="718" y="288" width="300" height="186"/>
+    <text class="ti" x="730" y="310">Features/Client 客户端侧（表现）</text>
+    <text class="monoG" x="730" y="334">ClueRender</text>
+    <text class="ts" x="730" y="351">把详细活动拼回线索句式</text>
+    <text class="monoG" x="730" y="375">ClueCard</text>
+    <text class="ts" x="730" y="392">补回旧版两格（活动卡面 / 整句）</text>
+    <text class="monoG" x="730" y="416">LieWhat</text>
+    <text class="ts" x="730" y="433">伪证界面还原「活动」一行</text>
+    <text class="monoG" x="730" y="456">FullClue</text>
+    <text class="ts" x="730" y="473">死者 / 旁观者自动补扫全部线索</text>
+
+    <rect class="box boxCli" x="1032" y="288" width="134" height="174"/>
+    <text class="ti" x="1044" y="310">Features/UI</text>
+    <text class="monoG" x="1044" y="336">LobbyToggle</text>
+    <text class="ts" x="1044" y="353">大厅设置页</text>
+    <text class="ts" x="1044" y="370">挂一行开关</text>
+    <text class="ts" x="1044" y="398">克隆原版控件必须</text>
+    <text class="mono" x="1044" y="415">RemoveAllListeners()</text>
+    <text class="ts" x="1044" y="440">只有装了本模块</text>
+    <text class="ts" x="1044" y="457">的玩家能看到</text>
+  </g>
+
+  <line class="fl" x1="600" y1="476" x2="600" y2="500" marker-end="url(#a1)"/>
+
+  <!-- Game assembly -->
+  <rect class="box boxGame" x="20" y="502" width="1160" height="118"/>
+  <text class="ti" x="36" y="524">游戏程序集 Assembly-CSharp（基准 0.1.18）—— 一切 API 的核对基准，引用前必须逐个核行号</text>
+  <g>
+    <rect class="box boxHost" x="36" y="536" width="372" height="70"/>
+    <text class="mono" x="46" y="556">Server.Game.*</text>
+    <text class="ts" x="46" y="574">GameRoom / DeviceManager / Device</text>
+    <text class="ts" x="46" y="591">TimeManager / ItemManager / Player / HostPeerSession</text>
+
+    <rect class="box boxCli" x="420" y="536" width="372" height="70"/>
+    <text class="mono" x="430" y="556">Managers / UI（客户端表现）</text>
+    <text class="ts" x="430" y="574">MyPlayer / DeviceBase / Managers.Device.Cache</text>
+    <text class="ts" x="430" y="591">ClueManager / UI_ClueSubItem / UI_ShakingSlider / ClueMirror</text>
+
+    <rect class="box boxPkt" x="804" y="536" width="362" height="70"/>
+    <text class="monoA" x="814" y="556">Protocol（protobuf 包）</text>
+    <text class="ts" x="814" y="574">DeviceInfo / PropositionInfo / ItemInfo</text>
+    <text class="ts" x="814" y="591">S_* / C_*（字段名写 JSON 时用 camelCase）</text>
+  </g>
+</svg>
+
+<!-- ══════════════════════ ② 隐蔽破坏点时序 ══════════════════════ -->
+<h2>② 隐蔽破坏点：从放熊到重派发（客户端 ↔ 服务端）</h2>
+<svg viewBox="0 0 1200 1010" role="img" aria-label="隐蔽破坏点时序图">
+  <defs>
+    <marker id="a2l" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ffbe61"/>
+    </marker>
+    <marker id="a2r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5fd3a6"/>
+    </marker>
+  </defs>
+
+  <!-- lane headers -->
+  <rect class="box boxCli" x="20" y="14" width="300" height="46"/>
+  <text class="ti" x="32" y="35">客户端（本机）</text>
+  <text class="ts" x="32" y="52">MyPlayer / Summon / DeviceBase / UI</text>
+  <rect class="box boxHost" x="880" y="14" width="300" height="46"/>
+  <text class="ti" x="892" y="35">服务端（房主进程）</text>
+  <text class="ts" x="892" y="52">GameRoom / DeviceManager / BreakerDevice</text>
+
+  <!-- S1 -->
+  <g>
+    <rect class="box" x="20" y="76" width="300" height="96"/>
+    <text class="monoG" x="32" y="98">Handle_S_SPAWN_DEVICE</text>
+    <text class="ts" x="32" y="116">→ Managers.Device.HandleAddDevice</text>
+    <text class="ts" x="32" y="134">DeviceDic 未命中 ⇒ 退回</text>
+    <text class="monoG" x="32" y="152">info.Type.ToString() = "Summon"</text>
+    <text class="ts" x="32" y="168">⇒ 场上出现两只「小熊」</text>
+
+    <rect class="box boxPkt" x="400" y="80" width="400" height="34"/>
+    <text class="monoA" x="414" y="102">S_SPAWN_DEVICE { Device: DeviceInfo }</text>
+    <line class="flA" x1="878" y1="140" x2="340" y2="140" marker-end="url(#a2l)"/>
+
+    <rect class="box" x="880" y="76" width="300" height="96"/>
+    <text class="monoA" x="892" y="98">WindowHook</text>
+    <text class="ts" x="892" y="116">挂 StartFuseboxSabotage 的 Postfix</text>
+    <text class="ts" x="892" y="134">OnWindowStart→EnsureDevices→SpawnDevice</text>
+    <text class="ts" x="892" y="152">两只 BreakerDevice（StateList=[0,0]）</text>
+    <text class="ts" x="892" y="168">开局 / 电闸重派发都会经过这里</text>
+  </g>
+
+  <!-- S2 -->
+  <g>
+    <rect class="box" x="20" y="186" width="300" height="96"/>
+    <text class="monoG" x="32" y="208">Managers.Device.Modify</text>
+    <text class="ts" x="32" y="226">→ Summon.RefreshState / GetInteractMessage</text>
+    <text class="ts" x="32" y="244">只认 StateList[1] == 我 且 _isActivate</text>
+    <text class="ts" x="32" y="262">⇒ HUD 出现「按 E」提示</text>
+    <text class="ts" x="32" y="278">（副作用：近身检测雷达，已接受）</text>
+
+    <rect class="box boxPkt" x="400" y="190" width="400" height="34"/>
+    <text class="monoA" x="414" y="212">S_MODIFY_DEVICE { StateList[1] = 该玩家 }</text>
+    <line class="flA" x1="878" y1="250" x2="340" y2="250" marker-end="url(#a2l)"/>
+    <text class="lbl" x="404" y="240">单发（不是广播）—— 只有收件人看到属于自己的熊</text>
+
+    <rect class="box" x="880" y="186" width="300" height="96"/>
+    <text class="monoA" x="892" y="208">Tick（挂 GameRoom.SurvivalTick）</text>
+    <text class="ts" x="892" y="226">→ RefreshFakes：进 120 / 出 160 滞回</text>
+    <text class="ts" x="892" y="244">未破坏只发黑幕；已破坏发所有存活者</text>
+    <text class="ts" x="892" y="262">范围内每 1.5 秒重发一次</text>
+    <text class="mono" x="892" y="278">SendFakeOwner / SendTruthOwner</text>
+  </g>
+
+  <!-- S3 -->
+  <g>
+    <rect class="box" x="20" y="296" width="300" height="96"/>
+    <text class="monoG" x="32" y="318">Summon.Interact</text>
+    <text class="ts" x="32" y="336">按 E（InteractBase → Interact）</text>
+    <text class="ts" x="32" y="354">注意 Bubble == -1 时按 E 只会「调查」</text>
+    <text class="ts" x="32" y="372">⇒ 可调查与可修复互斥</text>
+
+    <rect class="box boxPkt" x="400" y="300" width="400" height="34"/>
+    <text class="monoA" x="414" y="322">C_INTERACT_SUMMON { SummonId }</text>
+    <line class="flG" x1="340" y1="360" x2="878" y2="360" marker-end="url(#a2r)"/>
+
+    <rect class="box" x="880" y="296" width="300" height="96"/>
+    <text class="monoA" x="892" y="318">Handle_C_INTERACT_SUMMON</text>
+    <text class="ts" x="892" y="336">→ DeviceManager.Interact（门禁+交互锁）</text>
+    <text class="ts" x="892" y="354">→ BreakerDevice.Interact → OnInteract</text>
+    <text class="ts" x="892" y="372">判权 CanOperate / IsEligible：</text>
+    <text class="ts" x="892" y="388">未破坏只认 Color == Dark（黑幕）</text>
+  </g>
+
+  <!-- S4 -->
+  <g>
+    <rect class="box" x="20" y="406" width="300" height="96"/>
+    <text class="monoG" x="32" y="428">UI_ShakingSlider.SetInfo</text>
+    <text class="ts" x="32" y="446">value / 24（满值硬编码 24）</text>
+    <text class="ts" x="32" y="464">进度条出现在本人屏幕上</text>
+    <text class="ts" x="32" y="482">（别人看他手部没变）</text>
+
+    <rect class="box boxPkt" x="400" y="410" width="400" height="34"/>
+    <text class="monoA" x="414" y="432">S_ADD_ITEM { 1039 SHAKER_BALL } → S_MODIFY_MY_PLAYER</text>
+    <line class="flA" x1="878" y1="470" x2="340" y2="470" marker-end="url(#a2l)"/>
+    <text class="lbl" x="404" y="460">服务端权威手部全程不动，汽水只是本人屏幕上的幻觉</text>
+
+    <rect class="box" x="880" y="406" width="300" height="96"/>
+    <text class="monoA" x="892" y="428">BreakBar.Begin / Set / Resend / End</text>
+    <text class="ts" x="892" y="446">OnInteract → ScheduleBar（100ms 自续链）</text>
+    <text class="ts" x="892" y="464">打断保留进度（BaseProgress）</text>
+    <text class="ts" x="892" y="482">期间拦 DropItem / AcquireItem</text>
+  </g>
+
+  <!-- S5 -->
+  <g>
+    <rect class="box" x="20" y="516" width="300" height="118"/>
+    <text class="monoG" x="32" y="538">线索卡片 / 平板条目</text>
+    <text class="ts" x="32" y="556">「黑幕 于 … 在 科学室 切断了电力」</text>
+    <text class="ts" x="32" y="574">小熊切到「已破坏」贴图</text>
+    <text class="ts" x="32" y="592">电闸图钉 / 平板任务条目消失</text>
+    <text class="ts" x="32" y="610">主角本人收到一张角色脸</text>
+
+    <rect class="box boxPkt" x="400" y="520" width="400" height="86"/>
+    <text class="monoA" x="414" y="542">S_ADD_CLUE { PlayerId = 11037 }</text>
+    <text class="monoA" x="414" y="562">S_LEFT_CLUE { RoleFace = true }</text>
+    <text class="monoA" x="414" y="582">S_SABOTAGE_MISSION { IsAdd = false } × 3 电闸</text>
+    <text class="monoA" x="414" y="602">S_MODIFY_DEVICE { StateList[0] = 2 }</text>
+
+    <rect class="box" x="880" y="516" width="300" height="118"/>
+    <text class="monoA" x="892" y="538">Finish → OnStateChanged（状态翻转收口）</text>
+    <text class="ts" x="892" y="556">① LockAllBreakers：两个点一起进 CD</text>
+    <text class="ts" x="892" y="574">② CloseFuseboxWindow：撤电闸图钉</text>
+    <text class="ts" x="892" y="592">③ RecordSabotageClue：追加线索</text>
+    <text class="ts" x="892" y="610">④ ScheduleArrow（+10 秒，自校验 Broken）</text>
+    <text class="ts" x="892" y="628">⑤ BroadcastState：小熊亮 = 已破坏</text>
+  </g>
+
+  <!-- S6 -->
+  <g>
+    <rect class="box" x="20" y="650" width="300" height="76"/>
+    <text class="monoG" x="32" y="672">屏幕边缘箭头</text>
+    <text class="ts" x="32" y="690">指向破坏点位置</text>
+    <text class="ts" x="32" y="708">刻意不发任何文字通知</text>
+
+    <rect class="box boxPkt" x="400" y="654" width="400" height="34"/>
+    <text class="monoA" x="414" y="676">S_NOTIFY_ARROW { FuseboxArrow, Pos }</text>
+    <line class="flA" x1="878" y1="712" x2="340" y2="712" marker-end="url(#a2l)"/>
+    <text class="lbl" x="404" y="702">只发存活者；10 秒内被修复则不发光标</text>
+
+    <rect class="box" x="880" y="650" width="300" height="76"/>
+    <text class="monoA" x="892" y="672">ScheduleArrow</text>
+    <text class="ts" x="892" y="690">TimeManager.PushSurvivalJob(10, …)</text>
+    <text class="ts" x="892" y="708">回调不随阶段清空 ⇒ 第一句自校验</text>
+  </g>
+
+  <!-- S7 -->
+  <g>
+    <rect class="box boxCli" x="20" y="742" width="300" height="96"/>
+    <text class="ts" x="32" y="764">破坏点恢复可破坏</text>
+    <text class="ts" x="32" y="782">黑幕地图上重新出现电闸图钉</text>
+    <text class="ts" x="32" y="800">两个点 CanBreak = true</text>
+    <text class="ts" x="32" y="818">（回到第 ① 步）</text>
+
+    <rect class="box boxPkt" x="400" y="746" width="400" height="34"/>
+    <text class="monoA" x="414" y="768">（服务端本地：StartFuseboxSabotage）</text>
+    <line class="fl" x1="878" y1="804" x2="340" y2="804" marker-end="url(#a2l)"/>
+
+    <rect class="box boxHost" x="880" y="742" width="300" height="96"/>
+    <text class="monoA" x="892" y="764">ScheduleReload → ReopenWindow</text>
+    <text class="ts" x="892" y="782">修复完成起 60 秒 CD（自建计时器）</text>
+    <text class="ts" x="892" y="800">仍有电箱未恢复供电 ⇒ 交回原版流程</text>
+    <text class="ts" x="892" y="818">我们关掉的窗口必须还回去</text>
+  </g>
+
+  <!-- S8 -->
+  <g>
+    <rect class="box" x="20" y="854" width="300" height="96"/>
+    <text class="monoG" x="32" y="876">卡片 / 平板</text>
+    <text class="ts" x="32" y="894">可被任何人调查</text>
+    <text class="ts" x="32" y="912">时间列 = 破坏那一刻（冻结）</text>
+    <text class="ts" x="32" y="930">（未装本模块的客户端也看得到）</text>
+
+    <rect class="box boxPkt" x="400" y="858" width="400" height="34"/>
+    <text class="monoA" x="414" y="880">S_SCAN_DEVICE { 11037, 冻结时间, 房间 }</text>
+    <line class="flA" x1="878" y1="916" x2="340" y2="916" marker-end="url(#a2l)"/>
+    <text class="lbl" x="404" y="906">经 HostPeerSession.Send 出站时改写副本</text>
+
+    <rect class="box" x="880" y="854" width="300" height="96"/>
+    <text class="monoA" x="892" y="876">Device.StartDetective</text>
+    <text class="ts" x="892" y="894">ClueList.Count &gt; 0 ⇒ Bubble = -1</text>
+    <text class="ts" x="892" y="912">Device.Scan 按引用 AddRange(ClueList)</text>
+    <text class="ts" x="892" y="930">⇒ 破坏点留到调查阶段可被扫描</text>
+  </g>
+
+  <rect class="dash" x="20" y="964" width="1160" height="38"/>
+  <text class="ts" x="34" y="988">闭环补充：破坏期间「另一个破坏点」与「原版电闸」都被锁死 —— 见 ③ 里的 <tspan class="mono">BreakerStates.AnyBroken</tspan> 守卫与 <tspan class="mono">CloseFuseboxWindow</tspan>。</text>
+</svg>
+
+<!-- ══════════════════════ ③ 线索双源 ══════════════════════ -->
+<h2>③ 线索：真值一份、界面两条包，以及两条污染通道</h2>
+<svg viewBox="0 0 1200 700" role="img" aria-label="线索双源与污染可见性">
+  <defs>
+    <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#98a2b3"/>
+    </marker>
+    <marker id="a3a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ffbe61"/>
+    </marker>
+    <marker id="a3r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ff7a85"/>
+    </marker>
+  </defs>
+
+  <!-- truth -->
+  <rect class="box boxHost" x="30" y="60" width="380" height="92"/>
+  <text class="ti" x="44" y="84">服务端真值：Device.ClueList</text>
+  <text class="ts" x="44" y="104">唯一写入点 <tspan class="mono">RecordLastUsingPlayer</tspan>（0.1.18 :166386）</text>
+  <text class="ts" x="44" y="122">30 秒去重窗口：<tspan class="mono">x.Time &gt;= surviveTime/30*30</tspan></text>
+  <text class="ts" x="44" y="140">命中 ⇒ 先删旧克隆再发新（合并）；否则追加</text>
+
+  <!-- pollution chips -->
+  <rect class="box boxWarn" x="30" y="176" width="380" height="72"/>
+  <text class="monoR" x="44" y="198">身份污染（写在真值上）</text>
+  <text class="ts" x="44" y="216">RecordLastUsingPlayer 的 Prefix：state → Anonymity</text>
+  <text class="ts" x="44" y="234">⇒ PlayerId = 0 ⇒ 全场渲染「某人」（两侧都看得到）</text>
+
+  <rect class="box boxWarn" x="30" y="262" width="380" height="86"/>
+  <text class="monoR" x="44" y="284">时间污染（不写真值）</text>
+  <text class="ts" x="44" y="302">同一方法的 Postfix：打标 未知字段 101 = 显示时刻</text>
+  <text class="ts" x="44" y="320">真值 Time 保持真实 —— 去重窗口、迁移、报告全不受影响</text>
+  <text class="ts" x="44" y="338">（直接改 Time 会让合并不再命中 ⇒ 同设备线索重复追加）</text>
+
+  <!-- ClueMirror (dead data) -->
+  <rect class="box" x="30" y="380" width="380" height="118"/>
+  <text class="ti" x="44" y="404">客户端镜像：ClueMirror（死数据）</text>
+  <text class="ts" x="44" y="424">由 S_ADD_CLUE / S_REMOVE_CLUE / S_CLEAR_CLUES 喂养</text>
+  <text class="ts" x="44" y="442">房主自己的客户端被 <tspan class="mono">IsHost</tspan> 短路 ⇒ 不写它</text>
+  <text class="monoR" x="44" y="462">UI 从不渲染它</text>
+  <text class="ts" x="44" y="480">只有 HasDestroyableClue（:5021，不读 Time）与迁移快照读</text>
+
+  <line class="fl" x1="200" y1="152" x2="200" y2="380" marker-end="url(#a3)"/>
+  <text class="lbl" x="208" y="200">S_ADD_CLUE…</text>
+
+  <!-- outflow choke point -->
+  <rect class="box boxPkt" x="470" y="300" width="300" height="110"/>
+  <text class="ti" x="484" y="324">出站口（唯一改写点）</text>
+  <text class="monoA" x="484" y="346">HostPeerSession.Send(IMessage)</text>
+  <text class="ts" x="484" y="366">只认 S_SCAN_DEVICE / S_ADD_MY_CLUES</text>
+  <text class="ts" x="484" y="384">先克隆带 101 的条目，再把 Time 换成冻结值</text>
+  <text class="ts" x="484" y="402">服务端给每个玩家的下发都经过它</text>
+
+  <line class="fl" x1="410" y1="300" x2="470" y2="330" marker-end="url(#a3)"/>
+  <text class="lbl" x="392" y="300">按引用 AddRange / 开场推送</text>
+
+  <!-- destinations -->
+  <rect class="box boxCli" x="840" y="90" width="330" height="86"/>
+  <text class="monoG" x="854" y="112">远端客户端</text>
+  <text class="ts" x="854" y="132">SteamP2PSession（序列化后送达）</text>
+  <text class="ts" x="854" y="150">⇒ 看到冻结时间（装了 / 没装本模块都一样）</text>
+
+  <rect class="box boxCli" x="840" y="196" width="330" height="86"/>
+  <text class="monoG" x="854" y="218">房主自己的客户端</text>
+  <text class="ts" x="854" y="238">LocalLoopbackSink（会重新序列化，≠ 共享引用）</text>
+  <text class="ts" x="854" y="256">⇒ 同样看到冻结时间（旧写法看不到）</text>
+
+  <line class="flA" x1="770" y1="336" x2="840" y2="140" marker-end="url(#a3a)"/>
+  <line class="flA" x1="770" y1="352" x2="840" y2="240" marker-end="url(#a3a)"/>
+
+  <!-- UI -->
+  <rect class="box" x="840" y="320" width="330" height="128"/>
+  <text class="ti" x="854" y="344">界面读取（时间真正的来源）</text>
+  <text class="mono" x="854" y="366">Managers.Clue.AddClue / TakeDeviceClue</text>
+  <text class="mono" x="854" y="386">UI_ClueSubItem.FillText / FormatWhen</text>
+  <text class="mono" x="854" y="406">Util.FormatProposition（整句）</text>
+  <text class="ts" x="854" y="426">活动来源：① 字段 100 → ② 房主旁路表 → ③ 设备关联 → ④ 房间推断</text>
+
+  <line class="fl" x1="1005" y1="282" x2="1005" y2="320" marker-end="url(#a3)"/>
+  <line class="fl" x1="1005" y1="176" x2="1005" y2="196" marker-end="url(#a3)"/>
+
+  <rect class="dash" x="30" y="524" width="1140" height="150"/>
+  <text class="tz" x="44" y="548"><tspan class="ti">一句话记法</tspan></text>
+  <text class="ts" x="44" y="572">改 <tspan class="mono">S_ADD_CLUE</tspan> 系列 = 只动 <tspan class="monoR">ClueMirror</tspan>（死数据，界面不看）—— 这就是"破坏了但时间毫无变化"的根因。</text>
+  <text class="ts" x="44" y="594">界面时间来自 <tspan class="mono">S_SCAN_DEVICE</tspan>（扫描）与 <tspan class="mono">S_ADD_MY_CLUES</tspan>（平板 / 开场推送）；两者都经 <tspan class="mono">HostPeerSession.Send</tspan>。</text>
+  <text class="ts" x="44" y="616">所以"让大家都看到冻结时间"的正确姿势 = 写时打标（101） + 出站副本替换 —— 真值、去重窗口、迁移快照全不动。</text>
+  <text class="ts" x="44" y="638">身份污染不同：它发生在写入真值之前（改 <tspan class="mono">state</tspan>），所以服务端存的就是 0，房主与远端天然一致。</text>
+  <text class="ts" x="44" y="660">搜排查线索卡片时先看 <tspan class="mono">[ClueRenderDetail] LogResolution</tspan>：它会逐条打印活动的来源等级。</text>
+</svg>
+
+<!-- ══════════════════════ ④ 对照表 ══════════════════════ -->
+<h2>④ 英文名 → 中文代词标注（速查）</h2>
+<table>
+  <thead>
+    <tr><th>英文（真实名）</th><th>中文标注</th><th>备注 / 行号锚点</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="en">Device.ClueList</td><td>设备线索表（服务端真值）</td><td>0.1.18 :166249</td></tr>
+    <tr><td class="en">Device.RecordLastUsingPlayer</td><td>写入"最后使用人"线索</td><td>:166386；30 秒窗口在 :166404-166437</td></tr>
+    <tr><td class="en">Device.StartDetective</td><td>进入调查阶段：按线索数决定气泡</td><td>:166531；有线索 ⇒ Bubble = -1</td></tr>
+    <tr><td class="en">Device.Scan</td><td>扫描下发（按引用 AddRange）</td><td>:166315</td></tr>
+    <tr><td class="en">DeviceBase.InteractBase</td><td>按 E 的总入口（调查优先）</td><td>:4843；Bubble == -1 第一优先</td></tr>
+    <tr><td class="en">DeviceManager.Interact</td><td>服务端交互派发（含阶段门禁）</td><td>:166617；非 Door/Cabinet/Vent 只在 Survive</td></tr>
+    <tr><td class="en">DeviceManager.StartFuseboxSabotage</td><td>开电闸窗口（派发 3 个可拆电闸）</td><td>:166828；开局 + 供电恢复 60 秒后</td></tr>
+    <tr><td class="en">DeviceManager.ClearFuseboxSabotage</td><td>关电闸窗口（撤图钉 / 平板条目）</td><td>:166838 → Fusebox.ClearSabotage :165677</td></tr>
+    <tr><td class="en">DeviceManager.GetDisconnectFuseCount</td><td>还有几个电箱没恢复供电</td><td>:166857</td></tr>
+    <tr><td class="en">Fusebox.DisconnetCable</td><td>拉闸断电（要求 MissionType == -1）</td><td>:165644</td></tr>
+    <tr><td class="en">Summon.RefreshState</td><td>小熊贴图 / 麦克风刷新（断言 2 槽）</td><td>:4136</td></tr>
+    <tr><td class="en">Summon.GetInteractMessage</td><td>「按 E」提示的来源（认假主人）</td><td>:4159</td></tr>
+    <tr><td class="en">Managers.Device.HandleAddDevice</td><td>客户端按 ID 决定实体外观</td><td>:28247；未命中 ⇒ 用 Type 名（Summon）</td></tr>
+    <tr><td class="en">Managers.Device.SearchInteractDevice</td><td>客户端挑「按 E」目标</td><td>:28300；看交互矩形</td></tr>
+    <tr><td class="en">DeviceBase.HasDestroyableClue</td><td>这台设备有没有可销毁的线索</td><td>:5021；房主读服务端表、其余读 ClueMirror</td></tr>
+    <tr><td class="en">ClueMirror</td><td>客户端线索镜像（死数据，UI 不读）</td><td>:180791</td></tr>
+    <tr><td class="en">HostPeerSession.Send</td><td>会话出站口（所有下发都经过）</td><td>:175626；远端 / 房主回环共用这个口</td></tr>
+    <tr><td class="en">LocalLoopbackSink</td><td>房主自己的回环（会重新序列化）</td><td>:162611</td></tr>
+    <tr><td class="en">S_ADD_CLUE / S_REMOVE_CLUE / S_CLEAR_CLUES</td><td>线索增 / 删 / 清包（只喂 ClueMirror）</td><td>房主客户端被 IsHost 短路</td></tr>
+    <tr><td class="en">S_ADD_MY_CLUES</td><td>把我的线索推给我（平板 / 开场）</td><td>:174520-174540</td></tr>
+    <tr><td class="en">S_SCAN_DEVICE</td><td>扫描结果下发（界面时间来源）</td><td>:166318</td></tr>
+    <tr><td class="en">S_MODIFY_DEVICE</td><td>设备状态修改（假主人 / 已破坏态都走它）</td><td>:27850 客户端 Modify 只读 Bubble/MissionType/StateList</td></tr>
+    <tr><td class="en">ClueManager.Clue.CompareTo</td><td>客户端线索排序（按时间）</td><td>:27536-27539；冻结时间会改变顺序（已接受）</td></tr>
+    <tr><td class="en">PropositionInfo</td><td>线索本体（PlayerId / Time / RoomId / Destroyed）</td><td>:157635；未知字段 100 / 101 挂在它身上</td></tr>
+    <tr><td class="en">UnknownFields.SetDisplayTime</td><td>写入"显示时刻"（字段 101）</td><td>本项目 Core/UnknownFields.cs</td></tr>
+    <tr><td class="en">ShadowSabotageFeature.DisplayTimeStampHook</td><td>写时打标（RecordLastUsingPlayer 的 Postfix）</td><td>本项目 Patch.cs</td></tr>
+    <tr><td class="en">ShadowSabotageFeature.DisplayTimeOutflowHook</td><td>出站副本替换 Time（HostPeerSession.Send 的 Prefix）</td><td>本项目 Patch.cs + Wire.cs</td></tr>
+    <tr><td class="en">ShadowSabotageFeature.OnStateChanged</td><td>破坏 / 修复翻转后的收口</td><td>LockAllBreakers + CloseFuseboxWindow + RecordSabotageClue</td></tr>
+    <tr><td class="en">ShadowSabotageFeature.ScheduleReload / ReopenWindow</td><td>修复后 60 秒重派发</td><td>ReloadSeconds = 60</td></tr>
+    <tr><td class="en">BreakerStates.AnyBroken</td><td>是否有破坏点正处于已破坏态（封锁判据）</td><td>IsEligible 与 OnWindowStart 都用它</td></tr>
+    <tr><td class="en">BreakBar</td><td>摇汽水进度条（物品 1039，0..24）</td><td>服务端权威手部不动</td></tr>
+    <tr><td class="en">FeatureLoader.Enabled&lt;T&gt;()</td><td>热开关判断（每次读 cfg）</td><td>每个补丁入口第一行</td></tr>
+    <tr><td class="en">FeatureLoader.MountPatches</td><td>逐个 PatchAll 补丁类</td><td>PatchAll(功能类) 一个都挂不上（血的教训）</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  基准：游戏 0.1.18（<code>Assembly-CSharp.dll</code>）；本模块 = ClueDetail（独立 BepInEx 5 插件）。
+  机制细节见 <code>docs/隐蔽破坏点.md</code>、<code>docs/线索机制.md</code>、<code>docs/游戏API锚点.md</code>。
+</footer>
+
+</body>
+</html>

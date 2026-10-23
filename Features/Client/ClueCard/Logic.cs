@@ -61,6 +61,12 @@ namespace ClueDetail.Features.Client.ClueCard
 
         public RectTransform WhenText;
 
+        
+
+        /// <summary>「提出命题」按钮（旧版 136x64 @ +215；0.1.18 改成 100x80 @ +244）。</summary>
+
+        public RectTransform SubmitRect;
+
         public RectTransform Line;
 
         private void Awake()
@@ -250,6 +256,9 @@ namespace ClueDetail.Features.Client.ClueCard
             }
 
             extra.WhereImage = whereImage as RectTransform;
+
+            // 「提出命题」按钮（旧版 136x64 @ +215）：只在线索行补几何，伪证行没有这个按钮。
+            extra.SubmitRect = FindDeep(item.transform, "PropositionButton") as RectTransform;
             extra.WhereText = whereText as RectTransform;
             extra.WhenText = whenText as RectTransform;
             extra.Line = line as RectTransform;
@@ -283,7 +292,7 @@ namespace ClueDetail.Features.Client.ClueCard
 
                 bool active = child.activeSelf;
 
-                // 分隔竖线是 0.1.18 新加的（旧版图标视图里没有）—— ShowLine=false 时从一开始就当它
+                // 分隔竖线（ClueIconLine）旧版也有：0.1.17a 真 prefab 里 @(-54,0) 4×80 —— ShowLine=false 时从一开始就当它
                 // 不激活，悬浮结束也不会被恢复出来。
                 if (line != null && child == line.gameObject &&
                     ClueCardFeature.ShowLine != null && !ClueCardFeature.ShowLine.Value)
@@ -364,6 +373,7 @@ namespace ClueDetail.Features.Client.ClueCard
             extra.IconNodes = new GameObject[0];
             extra.IconActive = null;
             extra.WhereImage = null;
+            extra.SubmitRect = null;
             extra.WhereText = null;
             extra.WhenText = null;
             extra.Line = null;
@@ -386,6 +396,15 @@ namespace ClueDetail.Features.Client.ClueCard
                 SetWidth(extra.WhereText, ClueCardFeature.RoomWidth.Value);
                 SetX(extra.Line, ClueCardFeature.LineX.Value);
                 SetX(extra.WhenText, ClueCardFeature.WhenX.Value);
+
+                if (extra.SubmitRect != null)
+                {
+                    SetBox(
+                        extra.SubmitRect,
+                        ClueCardFeature.SubmitX.Value,
+                        ClueCardFeature.SubmitWidth.Value,
+                        ClueCardFeature.SubmitHeight.Value);
+                }
 
                 if (ClueCardFeature.ShowWhatCard.Value)
                 {
@@ -457,7 +476,9 @@ namespace ClueDetail.Features.Client.ClueCard
                 return;
             }
 
-            EWhatType what = ClueWhat.Resolve(clue);
+            // 卡面用 ResolveForCard：它比文本多一条 —— 11037「黑幕切断了电力」映射成电闸
+            //（旧版那一格显示的就是破坏电闸的设备图；0.1.18 里 WFusebox_card 仍在）。
+            EWhatType what = ClueWhat.ResolveForCard(clue);
             if (what == EWhatType.WNone)
             {
                 what = GuessFromRoom(clue.Info.RoomId);

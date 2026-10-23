@@ -14,7 +14,8 @@ namespace ClueDetail.Core
     /// <item><b>客户端 · 房主装了但关闭</b>：收到显式标记 0（<c>RemoteKnown &amp;&amp; !RemoteEnabled</c>）
     /// ⇒ 必须**同时关掉自采集**，否则客户端会把房主关掉的信息又自己补回来。</item>
     /// </list>
-    /// 状态经 <c>PropositionInfo</c> 的未知字段（号 6）随线索包传播 —— 见 <see cref="UnknownFields"/>。
+    /// 状态下发走**自定义协议**（Features/Both/CdProtocol 的 <c>CdState</c>，见 <c>Core/Net/CdWire.cs</c>），
+        /// 不是 <c>PropositionInfo</c> 的未知字段 —— 早期设计曾打算走字段号 6，已废。
     /// 线索卡本来就是扫描之后才出现的，所以"拿到线索"时状态必然已经就绪。
     /// </remarks>
     internal static class RoomState

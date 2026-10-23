@@ -40,6 +40,9 @@ namespace ClueDetail
             // 启动期批量 Bind 不逐条落盘，全部 Bind 完成后统一 Save 一次。
             Cfg.SaveOnConfigSet = false;
 
+            // 基础设施段 [Log]：Info 级总开关（减少持续写盘）。必须在功能装载之前绑好。
+            global::ClueDetail.Core.Log.Bind(Cfg);
+
             var result = FeatureLoader.Load(Cfg, Logger);
 
             Cfg.Save();

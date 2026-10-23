@@ -53,7 +53,10 @@ namespace ClueDetail.Core
                     }
 
                     EWhatType what = device.WhatType;
-                    if (what == EWhatType.WNone || result.Contains(what))
+                    // ⚠️ 同时排除 WFusebox：旧版构「房间活动候选」时就是这么做的（0.1.17a :27539
+                    // 的条件是 value.WhatType != WNone && value.WhatType != WFusebox）。
+                    // 理由：电闸那个活动是角色级动作（切断了电力），不该被当成房间里某台设备的活动贴到线索上。
+                    if (what == EWhatType.WNone || what == EWhatType.WFusebox || result.Contains(what))
                     {
                         continue;
                     }
