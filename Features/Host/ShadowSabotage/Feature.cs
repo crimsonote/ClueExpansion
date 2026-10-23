@@ -1,4 +1,4 @@
-﻿using BepInEx.Configuration;
+﻿﻿﻿﻿﻿using BepInEx.Configuration;
 using ClueDetail.Core;
 
 namespace ClueDetail.Features.Host.ShadowSabotage
@@ -105,17 +105,17 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             PosClockX = config.Bind(
                 section,
                 "PosClockX",
-                1232f,
+                1000f,
                 "时钟记录组件破坏点的 X 坐标。\n" +
-                "2026-10-23 起默认 1232 = 图书馆 warpMagic 右下方空地（tile 5,20 中心，世界坐标 1232,4592）。\n" +
+                "2026-10-23 起默认 1000 = 图书馆传送门左侧空地（离 warp 486、充电器 1044）（tile 4,15 中心，世界坐标 1000,3550）。\n" +
                 "旧默认 9561 是电脑室最右侧刀架下方。");
 
             PosClockY = config.Bind(
                 section,
                 "PosClockY",
-                4592f,
+                3550f,
                 "时钟记录组件破坏点的 Y 坐标。\n" +
-                "2026-10-23 起默认 4592 = 图书馆 warpMagic 右下方空地（tile 5,20 中心）。\n" +
+                "2026-10-23 起默认 4592 = 图书馆传送门左侧空地（离 warp 486、充电器 1044）（tile 4,15 中心）。\n" +
                 "旧默认 3430 是电脑室最右侧刀架下方。");
 
             EnableIdentify = config.Bind(
@@ -265,8 +265,8 @@ namespace ClueDetail.Features.Host.ShadowSabotage
 
         internal static float IdentifyX => PosIdentifyX != null ? PosIdentifyX.Value : 6580f;
         internal static float IdentifyY => PosIdentifyY != null ? PosIdentifyY.Value : 4900f;
-        internal static float ClockX => PosClockX != null ? PosClockX.Value : 1232f;
-        internal static float ClockY => PosClockY != null ? PosClockY.Value : 4592f;
+        internal static float ClockX => PosClockX != null ? PosClockX.Value : 1000f;
+        internal static float ClockY => PosClockY != null ? PosClockY.Value : 3550f;
 
         /// <summary>「身份识别组件」是否启用（热读）。</summary>
         internal static bool EnableIdentifyValue => EnableIdentify == null || EnableIdentify.Value;
