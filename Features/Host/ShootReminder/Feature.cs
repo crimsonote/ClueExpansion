@@ -1,4 +1,4 @@
-﻿﻿using BepInEx.Configuration;
+﻿﻿﻿﻿using BepInEx.Configuration;
 using ClueDetail.Core;
 
 namespace ClueDetail.Features.Host.ShootReminder
@@ -34,6 +34,9 @@ namespace ClueDetail.Features.Host.ShootReminder
         /// <summary>true = 每次拍摄都提醒；false = 只在每小时第 2 次提醒。</summary>
         public static ConfigEntry<bool> EveryShot { get; private set; }
 
+        /// <summary>提前多少秒发变暗（游戏秒）。默认 1 ⇒ 2 秒黑屏的中心落在拍摄时刻。</summary>
+        public static ConfigEntry<int> LeadSeconds { get; private set; }
+
         public static void Bind(ConfigFile config, string section)
         {
             ToAll = config.Bind(
@@ -46,10 +49,10 @@ namespace ClueDetail.Features.Host.ShootReminder
             EffectChoice = config.Bind(
                 section,
                 "EffectChoice",
-                0,
+                1,
                 "提醒特效：\n" +
-                "0（默认）= BlackOutVfx（全屏黑 2 秒，干净、无残留）\n" +
-                "1 = MineBombVfx（绝望炸弹面板 + 心跳声，可能残留到大厅）");
+                "1（默认）= MineBombVfx（绝望炸弹面板 + 心跳声，时长约 2.85 秒）\n" +
+                "0 = BlackOutVfx（全屏黑 2 秒，干净、无残留）");
 
             EveryShot = config.Bind(
                 section,
@@ -58,6 +61,13 @@ namespace ClueDetail.Features.Host.ShootReminder
                 "提醒频率：\n" +
                 "false（默认）= 只在每小时第 2 次拍摄提醒（帧时间相对偏移 % 60 == 10）\n" +
                 "true = 每次拍摄都提醒（每 10 分钟一次，帧时间相对偏移 % 10 == 0）");
+
+            LeadSeconds = config.Bind(
+                section,
+                "LeadSeconds",
+                1,
+                "提前多少秒发提醒（游戏秒，0–5）。默认 1 = MineBombVfx 时长 2.85 秒的一半取整，\n" +
+                "让提醒的中点落在拍摄时刻。换 EffectChoice = 0（BlackOut 2 秒）时可改成 1 同样合适。");
         }
 
         internal static bool ToAllValue => ToAll != null && ToAll.Value;
@@ -65,5 +75,7 @@ namespace ClueDetail.Features.Host.ShootReminder
         internal static int EffectChoiceValue => EffectChoice != null ? EffectChoice.Value : 0;
 
         internal static bool EveryShotValue => EveryShot != null && EveryShot.Value;
+
+        internal static int LeadSecondsValue => LeadSeconds != null ? LeadSeconds.Value : 1;
     }
 }

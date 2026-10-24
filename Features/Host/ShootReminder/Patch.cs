@@ -3,72 +3,95 @@ using HarmonyLib;
 using Protocol;
 using ServerGamePlayer = Server.Game.Player;
 using ServerGameRoom = Server.Game.GameRoom;
+using ServerTimeManager = Server.Game.TimeManager;
 using ServerTimelineRecorder = Server.Game.TimelineRecorder;
 
 namespace ClueDetail.Features.Host.ShootReminder
 {
     internal partial class ShootReminderFeature
     {
-        /// <summary>回放帧发送（= 拍摄时刻）后触发变暗提醒。</summary>
+        /// <summary>本秒是否已经提醒过（<c>SurvivalTick</c> 每帧都会调）。</summary>
+        private static int _lastFiredSecond = -1;
+
+        /// <summary>
+        /// 每帧检查「下一帧拍摄」是否在 1 秒后，提前发变暗。
+        /// </summary>
         /// <remarks>
-        /// 挂 Postfix 而不是 Prefix：<c>Send</c> 在时钟破坏期间会被
-        /// <c>ShadowSabotage</c> 的 Prefix 拦下（返回 false），那时 Postfix 不执行 ——
-        /// 正好符合「变暗提醒与时钟破坏无关」的口径。
+        /// <para>
+        /// ⚠️ 不能挂在 <c>TimelineRecorder.Send</c> 的 Postfix：那是帧**已经发出去之后**，
+        /// 黑屏只能从拍摄之后开始，画面上就会慢一拍（用户 2026-10-24 实测「慢了两秒」）。
+        /// </para>
+        /// <para>
+        /// 拍摄节拍：<c>Offset + 10k</c>（每 10 分钟一帧，<c>Offset</c> = 每局 0–10 的起始偏移）。
+        /// 提前 1 秒 = <c>rel % 10 == 9</c>；「每小时第 2 次」= <c>rel % 60 == 9</c>。
+        /// 客户端 <c>DevicesManager.PlayEffect</c> 的 BlackOut 是 2 秒，中心正好落在拍摄时刻。
+        /// </para>
         /// </remarks>
-        [HarmonyPatch(typeof(ServerTimelineRecorder), "Send", new[] { typeof(TimelineFrame) })]
-        internal static class SendHook
+        [HarmonyPatch(typeof(ServerGameRoom), "SurvivalTick")]
+        internal static class TickHook
         {
             [HarmonyPostfix]
-            private static void Postfix(TimelineFrame frame)
+            private static void Postfix()
             {
                 if (!FeatureLoader.Enabled<ShootReminderFeature>()) return;
 
                 try
                 {
-                    OnFrame(frame);
+                    Tick();
                 }
                 catch (global::System.Exception ex)
                 {
-                    global::ClueDetail.Core.Log.Exception(ex, "拍摄提醒：处理回放帧失败。");
+                    global::ClueDetail.Core.Log.Exception(ex, "拍摄提醒：每帧检查失败。");
                 }
             }
         }
 
-        /// <summary>每帧判断是否命中「每小时第 2 次拍摄」，命中就给目标玩家发变暗。</summary>
-        private static void OnFrame(TimelineFrame frame)
+        private static void Tick()
         {
-            if (frame == null)
+            ServerGameRoom room = ServerGameRoom.Instance;
+            if (room == null || room.State != EGameState.Survive)
             {
                 return;
             }
 
             ServerTimelineRecorder recorder = ServerTimelineRecorder.Instance;
-            if (recorder == null)
+            ServerTimeManager tm = ServerTimeManager.Instance;
+            if (recorder == null || tm == null)
             {
                 return;
             }
 
-            int rel = frame.Time - recorder.Offset;
+            int now = tm.SurviveTime;
+            if (now == _lastFiredSecond)
+            {
+                return;     // 同一秒只处理一次
+            }
+
+            int rel = now - recorder.Offset;
             if (rel < 0)
             {
                 return;
             }
 
-            // 拍摄节拍：默认只在「每小时第 2 次」；EveryShot 打开后每次拍摄（10 分钟一帧）都提醒。
-            if (EveryShotValue)
-            {
-                if (rel % 10 != 0)
-                {
-                    return;
-                }
-            }
-            else if (rel % 60 != 10)
+            // 拍摄发生在 rel % 10 == 0；提前 LeadSeconds 秒，让 2 秒黑屏的中心落在拍摄时刻。
+            int lead = LeadSecondsValue;
+            if (lead < 0) lead = 0;
+            if (lead > 5) lead = 5;
+            bool fire = EveryShotValue
+                ? rel % 10 == (10 - lead) % 10
+                : rel % 60 == 10 - lead;
+            if (!fire)
             {
                 return;
             }
 
-            ServerGameRoom room = ServerGameRoom.Instance;
-            if (room == null || room.State != EGameState.Survive || room.Players == null)
+            _lastFiredSecond = now;
+            SendBlackout(room, now, recorder.Offset);
+        }
+
+        private static void SendBlackout(ServerGameRoom room, int now, int offset)
+        {
+            if (room.Players == null)
             {
                 return;
             }
@@ -105,8 +128,14 @@ namespace ClueDetail.Features.Host.ShootReminder
             if (sent > 0)
             {
                 global::ClueDetail.Core.Log.Info(
-                    $"拍摄提醒：帧 t={frame.Time}（拍摄偏移 {recorder.Offset}）→ 变暗 {sent} 人（{effect}）。");
+                    $"拍摄提醒：t={now}（拍摄偏移 {offset}，拍摄在第 {now + 1} 秒）→ 变暗 {sent} 人（{effect}）。");
             }
+        }
+
+        /// <summary>换局重置「本秒已提醒」标记。</summary>
+        internal static void Reset()
+        {
+            _lastFiredSecond = -1;
         }
     }
 }
