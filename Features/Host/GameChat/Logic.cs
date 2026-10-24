@@ -117,18 +117,12 @@ namespace ClueDetail.Features.Host.GameChat
                 return;
             }
 
-            // ⚠️ 2026-10-21：**不能私聊死者**。死者的聊天框收不到存活玩家的私聊
-            // （客户端对死者只放行死者频道），送过去就是一条永远读不到的包，
-            // 而发送者会误以为"已经说到了"。
-            if (!target.IsAlive)
-            {
-                Reply(room, player, $"「{target.Name}」已经死亡，无法私聊。");
-                return;
-            }
-
-            // 死者发起的私聊必须标成死者消息，否则接收方会当成活人说的话。
-            // 原版 S_CHAT_MESSAGE.IsDead 就是干这个的（客户端 SetInfo 的 isDeadMessage）。
-            bool senderDead = !player.IsAlive;
+            // ⚠️ 2026-10-24 改（配合 DT 的「生死互通」）：**允许私聊死者**。
+            // 只要任一方向涉及死者，就标成「死者消息」，由客户端按死者样式渲染；
+            // 若 DT 的生死互通功能端要接管渲染，可以在同一条包上重写 IsDead / 频道。
+            // （旧口径 2026-10-21 是直接拒绝，因为死者的聊天框收不到活人私聊；
+            //   现在由生死互通负责让死者真能收到。）
+            bool senderDead = !player.IsAlive || !target.IsAlive;
 
             // 只有双方可见：目标一份、发送者一份回执，其余人一个字节都不发。
             SendChat(room, target, player, $"[私聊] {player.Name}：{message}", senderDead);
