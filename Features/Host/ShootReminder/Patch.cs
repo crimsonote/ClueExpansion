@@ -1,4 +1,4 @@
-﻿﻿using ClueDetail.Core;
+﻿﻿﻿﻿using ClueDetail.Core;
 using HarmonyLib;
 using Protocol;
 using ServerGamePlayer = Server.Game.Player;
@@ -46,6 +46,89 @@ namespace ClueDetail.Features.Host.ShootReminder
             }
         }
 
+        /// <summary>
+        /// 回放记录频率（简化 cron）：Prefix 决定原版 <c>OnSurvivalTick</c> 这一 tick 要不要采集。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// 原版只在 <c>surviveTime % 10 == Offset</c> 时 <c>Capture</c> 一帧（10 分钟一帧，
+        /// <c>Offset</c> = 每局 0–10 的随机起点）。
+        /// </para>
+        /// <para>
+        /// 支持：<c>default</c>（原版）、<c>*/N</c>（每 N 分钟，N ≥ 10）、
+        /// <c>M */H</c>（每 H 小时的 M 分钟）、<c>never</c>（一次都不记）。
+        /// 无法解析时一律放行，绝不因为配错而让回放完全断掉。
+        /// </para>
+        /// </remarks>
+        [HarmonyPatch(typeof(ServerTimelineRecorder), nameof(ServerTimelineRecorder.OnSurvivalTick))]
+        internal static class RecordCronHook
+        {
+            [HarmonyPrefix]
+            private static bool Prefix(int surviveTime)
+            {
+                if (!FeatureLoader.Enabled<ShootReminderFeature>()) return true;
+
+                try
+                {
+                    return ShouldCapture(surviveTime);
+                }
+                catch (global::System.Exception ex)
+                {
+                    global::ClueDetail.Core.Log.Exception(ex, "拍摄提醒：记录频率判断失败（放行）。");
+                    return true;
+                }
+            }
+        }
+
+        /// <summary>按 <see cref="RecordCronValue"/> 判断这一 tick 是否采集。</summary>
+        private static bool ShouldCapture(int surviveTime)
+        {
+            string cron = (RecordCronValue ?? string.Empty).Trim().ToLowerInvariant();
+            if (cron.Length == 0 || cron == "default")
+            {
+                return true;        // 原版自己判断
+            }
+
+            if (cron == "never" || cron == "-" || cron == "0")
+            {
+                return false;
+            }
+
+            ServerTimelineRecorder recorder = ServerTimelineRecorder.Instance;
+            int offset = recorder != null ? recorder.Offset : 0;
+            int rel = surviveTime - offset;
+            if (rel < 0)
+            {
+                return false;
+            }
+
+            // */N —— 每 N 分钟（游戏分钟 = 秒）
+            if (cron.StartsWith("*/"))
+            {
+                if (int.TryParse(cron.Substring(2), out int n))
+                {
+                    if (n < 10) n = 10;     // 不比原版更密
+                    return rel % n == 0;
+                }
+
+                return true;
+            }
+
+            // M */H —— 每 H 小时的 M 分钟
+            string[] parts = cron.Split(new[] { ' ' }, global::System.StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 2 && parts[1].StartsWith("*/"))
+            {
+                if (int.TryParse(parts[0], out int minute)
+                    && int.TryParse(parts[1].Substring(2), out int hours)
+                    && hours > 0)
+                {
+                    minute = global::System.Math.Max(0, global::System.Math.Min(59, minute));
+                    return rel % (hours * 60) == minute;
+                }
+            }
+
+            return true;    // 解析失败 ⇒ 放行
+        }
         private static void Tick()
         {
             ServerGameRoom room = ServerGameRoom.Instance;

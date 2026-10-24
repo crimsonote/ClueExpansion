@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using BepInEx.Configuration;
+﻿﻿﻿﻿﻿using BepInEx.Configuration;
 using ClueDetail.Core;
 
 namespace ClueDetail.Features.Host.ShootReminder
@@ -37,6 +37,9 @@ namespace ClueDetail.Features.Host.ShootReminder
         /// <summary>提前多少秒发变暗（游戏秒）。默认 1 ⇒ 2 秒黑屏的中心落在拍摄时刻。</summary>
         public static ConfigEntry<int> LeadSeconds { get; private set; }
 
+        /// <summary>回放记录频率（简化 cron）。见 Bind 里的说明。</summary>
+        public static ConfigEntry<string> RecordCron { get; private set; }
+
         public static void Bind(ConfigFile config, string section)
         {
             ToAll = config.Bind(
@@ -68,6 +71,16 @@ namespace ClueDetail.Features.Host.ShootReminder
                 1,
                 "提前多少秒发提醒（游戏秒，0–5）。默认 1 = MineBombVfx 时长 2.85 秒的一半取整，\n" +
                 "让提醒的中点落在拍摄时刻。换 EffectChoice = 0（BlackOut 2 秒）时可改成 1 同样合适。");
+
+            RecordCron = config.Bind(
+                section,
+                "RecordCron",
+                "default",
+                "回放记录频率（简化类 cron 语法，时间都带原版 0–10 偏移）：\n" +
+                "  default = 原版节拍（每 10 分钟一帧，surviveTime % 10 == Offset）\n" +
+                "  */N     = 每 N 分钟一帧（N ≥ 10；10 = 原版密度，再小按 10 处理）\n" +
+                "  M */H   = 每 H 小时的 M 分钟那一帧（例：0 */2 = 每 2 小时整点）\n" +
+                "  never   = 一次都不记录（极端值，等价于关掉回放采集）");
         }
 
         internal static bool ToAllValue => ToAll != null && ToAll.Value;
@@ -77,5 +90,7 @@ namespace ClueDetail.Features.Host.ShootReminder
         internal static bool EveryShotValue => EveryShot != null && EveryShot.Value;
 
         internal static int LeadSecondsValue => LeadSeconds != null ? LeadSeconds.Value : 1;
+
+        internal static string RecordCronValue => RecordCron != null ? RecordCron.Value : "default";
     }
 }
