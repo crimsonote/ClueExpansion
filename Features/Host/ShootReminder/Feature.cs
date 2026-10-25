@@ -40,6 +40,15 @@ namespace ClueDetail.Features.Host.ShootReminder
         /// <summary>回放记录频率（简化 cron）。见 Bind 里的说明。</summary>
         public static ConfigEntry<string> RecordCron { get; private set; }
 
+        /// <summary>提醒频率（简化 cron）；default = 跟录制。</summary>
+        public static ConfigEntry<string> ReminderCron { get; private set; }
+
+        /// <summary>本模块随机偏移下界（含）。录制与提醒共用。</summary>
+        public static ConfigEntry<int> OffsetMin { get; private set; }
+
+        /// <summary>本模块随机偏移上界（不含）。</summary>
+        public static ConfigEntry<int> OffsetMax { get; private set; }
+
         public static void Bind(ConfigFile config, string section)
         {
             ToAll = config.Bind(
@@ -81,6 +90,26 @@ namespace ClueDetail.Features.Host.ShootReminder
                 "  */N     = 每 N 分钟一帧（N ≥ 10；10 = 原版密度，再小按 10 处理）\n" +
                 "  M */H   = 每 H 小时的 M 分钟那一帧（例：0 */2 = 每 2 小时整点）\n" +
                 "  never   = 一次都不记录（极端值，等价于关掉回放采集）");
+
+            ReminderCron = config.Bind(
+                section,
+                "ReminderCron",
+                "default",
+                "提醒频率（同一套简化 cron）。default = 跟随 RecordCron；\n" +
+                "填具体值时独立生效（例：录制 */10 *、提醒 */60 * = 每 10 分钟录、每小时黑一次）。");
+
+            OffsetMin = config.Bind(
+                section,
+                "OffsetMin",
+                0,
+                "本模块随机偏移的下界（含）。录制与提醒共用同一个偏移；\n" +
+                "OffsetMin >= OffsetMax 时退回游戏原版 Offset。");
+
+            OffsetMax = config.Bind(
+                section,
+                "OffsetMax",
+                10,
+                "本模块随机偏移的上界（不含）。默认 [0,10) 与原版一致。");
         }
 
         internal static bool ToAllValue => ToAll != null && ToAll.Value;
@@ -92,5 +121,11 @@ namespace ClueDetail.Features.Host.ShootReminder
         internal static int LeadSecondsValue => LeadSeconds != null ? LeadSeconds.Value : 1;
 
         internal static string RecordCronValue => RecordCron != null ? RecordCron.Value : "default";
+
+        internal static string ReminderCronValue => ReminderCron != null ? ReminderCron.Value : "default";
+
+        internal static int OffsetMinValue => OffsetMin != null ? OffsetMin.Value : 0;
+
+        internal static int OffsetMaxValue => OffsetMax != null ? OffsetMax.Value : 10;
     }
 }

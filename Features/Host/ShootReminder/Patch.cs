@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using ClueDetail.Core;
+﻿using ClueDetail.Core;
 using HarmonyLib;
 using Protocol;
 using ServerGamePlayer = Server.Game.Player;
@@ -10,23 +10,64 @@ namespace ClueDetail.Features.Host.ShootReminder
 {
     internal partial class ShootReminderFeature
     {
-        /// <summary>本秒是否已经提醒过（<c>SurvivalTick</c> 每帧都会调）。</summary>
+        /// <summary>本局的录制偏移（录制与提醒共用）。负数 = 还没生成。</summary>
+        private static int _offset = -1;
+
+        /// <summary>本秒是否已经提醒过。</summary>
         private static int _lastFiredSecond = -1;
 
+        /// <summary>每局开始（<c>StartSurvive</c>）时生成本模块自己的偏移。</summary>
+        [HarmonyPatch(typeof(ServerTimelineRecorder), nameof(ServerTimelineRecorder.StartSurvive))]
+        internal static class StartSurviveHook
+        {
+            [HarmonyPostfix]
+            private static void Postfix()
+            {
+                if (!FeatureLoader.Enabled<ShootReminderFeature>()) return;
+
+                _offset = RollOffset();
+                _lastFiredSecond = -1;
+            }
+        }
+
         /// <summary>
-        /// 每帧检查「下一帧拍摄」是否在 1 秒后，提前发变暗。
+        /// 录制周期：Prefix 决定原版 <c>OnSurvivalTick</c> 这一 tick 要不要采集。
         /// </summary>
         /// <remarks>
-        /// <para>
-        /// ⚠️ 不能挂在 <c>TimelineRecorder.Send</c> 的 Postfix：那是帧**已经发出去之后**，
-        /// 黑屏只能从拍摄之后开始，画面上就会慢一拍（用户 2026-10-24 实测「慢了两秒」）。
-        /// </para>
-        /// <para>
-        /// 拍摄节拍：<c>Offset + 10k</c>（每 10 分钟一帧，<c>Offset</c> = 每局 0–10 的起始偏移）。
-        /// 提前 1 秒 = <c>rel % 10 == 9</c>；「每小时第 2 次」= <c>rel % 60 == 9</c>。
-        /// 客户端 <c>DevicesManager.PlayEffect</c> 的 BlackOut 是 2 秒，中心正好落在拍摄时刻。
-        /// </para>
+        /// 击杀帧（<c>OnMurder</c>）**不挂** —— 它与本偏移机制无关，始终独立发送。
         /// </remarks>
+        [HarmonyPatch(typeof(ServerTimelineRecorder), nameof(ServerTimelineRecorder.OnSurvivalTick))]
+        internal static class RecordHook
+        {
+            [HarmonyPrefix]
+            private static bool Prefix(int surviveTime)
+            {
+                if (!FeatureLoader.Enabled<ShootReminderFeature>()) return true;
+
+                try
+                {
+                    string cron = RecordCronValue;
+                    if (CronSchedule.IsDefault(cron))
+                    {
+                        return true;        // 原版自己判断
+                    }
+
+                    if (CronSchedule.IsNever(cron))
+                    {
+                        return false;
+                    }
+
+                    return CronSchedule.Matches(cron, surviveTime - CurrentOffset());
+                }
+                catch (global::System.Exception ex)
+                {
+                    global::ClueDetail.Core.Log.Exception(ex, "拍摄提醒：录制频率判断失败（放行）。");
+                    return true;
+                }
+            }
+        }
+
+        /// <summary>提醒：每帧检查是否到了「录制节拍 - LeadSeconds」。</summary>
         [HarmonyPatch(typeof(ServerGameRoom), "SurvivalTick")]
         internal static class TickHook
         {
@@ -46,100 +87,11 @@ namespace ClueDetail.Features.Host.ShootReminder
             }
         }
 
-        /// <summary>
-        /// 回放记录频率（简化 cron）：Prefix 决定原版 <c>OnSurvivalTick</c> 这一 tick 要不要采集。
-        /// </summary>
-        /// <remarks>
-        /// <para>
-        /// 原版只在 <c>surviveTime % 10 == Offset</c> 时 <c>Capture</c> 一帧（10 分钟一帧，
-        /// <c>Offset</c> = 每局 0–10 的随机起点）。
-        /// </para>
-        /// <para>
-        /// 支持：<c>default</c>（原版）、<c>*/N</c>（每 N 分钟，N ≥ 10）、
-        /// <c>M */H</c>（每 H 小时的 M 分钟）、<c>never</c>（一次都不记）。
-        /// 无法解析时一律放行，绝不因为配错而让回放完全断掉。
-        /// </para>
-        /// </remarks>
-        [HarmonyPatch(typeof(ServerTimelineRecorder), nameof(ServerTimelineRecorder.OnSurvivalTick))]
-        internal static class RecordCronHook
-        {
-            [HarmonyPrefix]
-            private static bool Prefix(int surviveTime)
-            {
-                if (!FeatureLoader.Enabled<ShootReminderFeature>()) return true;
-
-                try
-                {
-                    return ShouldCapture(surviveTime);
-                }
-                catch (global::System.Exception ex)
-                {
-                    global::ClueDetail.Core.Log.Exception(ex, "拍摄提醒：记录频率判断失败（放行）。");
-                    return true;
-                }
-            }
-        }
-
-        /// <summary>按 <see cref="RecordCronValue"/> 判断这一 tick 是否采集。</summary>
-        private static bool ShouldCapture(int surviveTime)
-        {
-            string cron = (RecordCronValue ?? string.Empty).Trim().ToLowerInvariant();
-            if (cron.Length == 0 || cron == "default")
-            {
-                return true;        // 原版自己判断
-            }
-
-            if (cron == "never" || cron == "-" || cron == "0")
-            {
-                return false;
-            }
-
-            ServerTimelineRecorder recorder = ServerTimelineRecorder.Instance;
-            int offset = recorder != null ? recorder.Offset : 0;
-            int rel = surviveTime - offset;
-            if (rel < 0)
-            {
-                return false;
-            }
-
-            // */N —— 每 N 分钟（游戏分钟 = 秒）
-            if (cron.StartsWith("*/"))
-            {
-                if (int.TryParse(cron.Substring(2), out int n))
-                {
-                    if (n < 10) n = 10;     // 不比原版更密
-                    return rel % n == 0;
-                }
-
-                return true;
-            }
-
-            // M */H —— 每 H 小时的 M 分钟
-            string[] parts = cron.Split(new[] { ' ' }, global::System.StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 2 && parts[1].StartsWith("*/"))
-            {
-                if (int.TryParse(parts[0], out int minute)
-                    && int.TryParse(parts[1].Substring(2), out int hours)
-                    && hours > 0)
-                {
-                    minute = global::System.Math.Max(0, global::System.Math.Min(59, minute));
-                    return rel % (hours * 60) == minute;
-                }
-            }
-
-            return true;    // 解析失败 ⇒ 放行
-        }
         private static void Tick()
         {
             ServerGameRoom room = ServerGameRoom.Instance;
-            if (room == null || room.State != EGameState.Survive)
-            {
-                return;
-            }
-
-            ServerTimelineRecorder recorder = ServerTimelineRecorder.Instance;
             ServerTimeManager tm = ServerTimeManager.Instance;
-            if (recorder == null || tm == null)
+            if (room == null || room.State != EGameState.Survive || tm == null)
             {
                 return;
             }
@@ -147,32 +99,61 @@ namespace ClueDetail.Features.Host.ShootReminder
             int now = tm.SurviveTime;
             if (now == _lastFiredSecond)
             {
-                return;     // 同一秒只处理一次
-            }
-
-            int rel = now - recorder.Offset;
-            if (rel < 0)
-            {
                 return;
             }
 
-            // 拍摄发生在 rel % 10 == 0；提前 LeadSeconds 秒，让 2 秒黑屏的中心落在拍摄时刻。
             int lead = LeadSecondsValue;
             if (lead < 0) lead = 0;
-            if (lead > 5) lead = 5;
-            bool fire = EveryShotValue
-                ? rel % 10 == (10 - lead) % 10
-                : rel % 60 == 10 - lead;
-            if (!fire)
+            if (lead > 10) lead = 10;
+
+            string cron = EffectiveReminderCron();
+            int rel = now - CurrentOffset();
+            if (!CronSchedule.Matches(cron, rel + lead))
             {
                 return;
             }
 
             _lastFiredSecond = now;
-            SendBlackout(room, now, recorder.Offset);
+            SendBlackout(room, now, CurrentOffset(), cron);
         }
 
-        private static void SendBlackout(ServerGameRoom room, int now, int offset)
+        /// <summary>提醒用的节拍：<c>ReminderCron</c> 非 default 时用它；否则跟录制 / EveryShot。</summary>
+        private static string EffectiveReminderCron()
+        {
+            string cron = ReminderCronValue;
+            if (!CronSchedule.IsDefault(cron))
+            {
+                return cron;
+            }
+
+            return EveryShotValue ? "*/10 *" : RecordCronValue;
+        }
+
+        private static int RollOffset()
+        {
+            int min = OffsetMinValue;
+            int max = OffsetMaxValue;
+            if (max <= min)
+            {
+                return -1;      // 配置无效 ⇒ 退回原版 Offset
+            }
+
+            return new global::System.Random().Next(min, max);
+        }
+
+        /// <summary>本模块偏移；没生成（或配置无效）时退回原版 <c>TimelineRecorder.Offset</c>。</summary>
+        private static int CurrentOffset()
+        {
+            if (_offset >= 0)
+            {
+                return _offset;
+            }
+
+            ServerTimelineRecorder recorder = ServerTimelineRecorder.Instance;
+            return recorder != null ? recorder.Offset : 0;
+        }
+
+        private static void SendBlackout(ServerGameRoom room, int now, int offset, string cron)
         {
             if (room.Players == null)
             {
@@ -211,13 +192,14 @@ namespace ClueDetail.Features.Host.ShootReminder
             if (sent > 0)
             {
                 global::ClueDetail.Core.Log.Info(
-                    $"拍摄提醒：t={now}（拍摄偏移 {offset}，拍摄在第 {now + 1} 秒）→ 变暗 {sent} 人（{effect}）。");
+                    $"拍摄提醒：t={now}（偏移 {offset}，cron={cron}）→ {effect} {sent} 人。");
             }
         }
 
-        /// <summary>换局重置「本秒已提醒」标记。</summary>
+        /// <summary>换局重置。</summary>
         internal static void Reset()
         {
+            _offset = -1;
             _lastFiredSecond = -1;
         }
     }
