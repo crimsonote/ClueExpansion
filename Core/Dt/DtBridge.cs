@@ -1,4 +1,4 @@
-﻿﻿using System.Collections.Generic;
+﻿﻿﻿﻿using System.Collections.Generic;
 using System.Reflection;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -171,8 +171,23 @@ namespace ClueDetail.Core.Dt
                 }
 
                 // ① 标签目录 + AllBits
+                //
+                // ⚠️ Unity Mono 的 `FieldInfo.GetValue` **不会**触发 `beforefieldinit` 类型的静态构造：
+                // 直接读 `Entries` 可能得到 null，随后「读不到旧值 → 只追加自己 → 写回」
+                // 就会把上游的全部条目覆盖成我们这一条（HideAndSeek 用 `PrimeTagCatalog` 规避）。
+                // 所以这里先手动跑一次静态构造，再读；仍然拿不到就**放弃登记**，绝不写入。
+                System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(catalog.TypeHandle);
+
                 FieldInfo entriesField = catalog.GetField("Entries", BindingFlags.Public | BindingFlags.Static);
-                if (entriesField != null && !ContainsTag(entriesField.GetValue(null), ownTag))
+                object oldEntries = entriesField?.GetValue(null);
+                if (entriesField == null || oldEntries == null)
+                {
+                    log.LogWarning("[ClueDetail] DT 标签目录未初始化（Entries 为 null），跳过标签登记以免覆盖上游条目；" +
+                                   "配置仍可在 CONFIG 页的「其他」里修改。");
+                    return;
+                }
+
+                if (!ContainsTag(oldEntries, ownTag))
                 {
                     object entry = System.Activator.CreateInstance(entryType);
                     SetMember(entryType, entry, "Tag", ownTag);
@@ -184,7 +199,7 @@ namespace ClueDetail.Core.Dt
 
                     var list = (System.Collections.IList)System.Activator.CreateInstance(
                         typeof(List<>).MakeGenericType(entryType));
-                    if (entriesField.GetValue(null) is System.Collections.IEnumerable old)
+                    if (oldEntries is System.Collections.IEnumerable old)
                     {
                         foreach (object item in old)
                         {
