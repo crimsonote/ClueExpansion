@@ -1,4 +1,5 @@
-﻿using ClueDetail.Core;
+﻿﻿﻿﻿using ClueDetail.Core;
+using ClueDetail.Core.Timeline;
 using HarmonyLib;
 using Protocol;
 using ServerGamePlayer = Server.Game.Player;
@@ -31,42 +32,36 @@ namespace ClueDetail.Features.Host.ShootReminder
         }
 
         /// <summary>
-        /// 录制周期：Prefix 决定原版 <c>OnSurvivalTick</c> 这一 tick 要不要采集。
+        /// 录制节拍：注册到回放管线的 <c>Plan</c> 阶段（唯一挂点是 Core/Timeline/Pipeline）。
         /// </summary>
         /// <remarks>
-        /// 击杀帧（<c>OnMurder</c>）**不挂** —— 它与本偏移机制无关，始终独立发送。
+        /// 击杀帧（<c>OnMurder</c>）不参与 —— 它与本偏移机制无关，始终独立发送。
         /// </remarks>
-        [HarmonyPatch(typeof(ServerTimelineRecorder), nameof(ServerTimelineRecorder.OnSurvivalTick))]
-        internal static class RecordHook
+        private static void RegisterPipeline()
         {
-            [HarmonyPrefix]
-            private static bool Prefix(int surviveTime)
-            {
-                if (!FeatureLoader.Enabled<ShootReminderFeature>()) return true;
-
-                try
-                {
-                    string cron = RecordCronValue;
-                    if (CronSchedule.IsDefault(cron))
-                    {
-                        return true;        // 原版自己判断
-                    }
-
-                    if (CronSchedule.IsNever(cron))
-                    {
-                        return false;
-                    }
-
-                    return CronSchedule.Matches(cron, surviveTime - CurrentOffset());
-                }
-                catch (global::System.Exception ex)
-                {
-                    global::ClueDetail.Core.Log.Exception(ex, "拍摄提醒：录制频率判断失败（放行）。");
-                    return true;
-                }
-            }
+            TimelinePipeline.Register(
+                "ShootReminder.Record",
+                TimelinePipeline.Stage.Plan,
+                100,
+                (frame, surviveTime, stage) => ShouldCapture(surviveTime));
         }
 
+        /// <summary>决定这一 tick 要不要采集（true = 放行原版采集）。</summary>
+        private static bool ShouldCapture(int surviveTime)
+        {
+            string cron = RecordCronValue;
+            if (CronSchedule.IsDefault(cron))
+            {
+                return true;        // 原版自己判断
+            }
+
+            if (CronSchedule.IsNever(cron))
+            {
+                return false;
+            }
+
+            return CronSchedule.Matches(cron, surviveTime - CurrentOffset());
+        }
         /// <summary>提醒：每帧检查是否到了「录制节拍 - LeadSeconds」。</summary>
         [HarmonyPatch(typeof(ServerGameRoom), "SurvivalTick")]
         internal static class TickHook
@@ -87,6 +82,74 @@ namespace ClueDetail.Features.Host.ShootReminder
             }
         }
 
+        /// <summary>
+        /// 进入调查阶段：对**未报告**（IsReport == false）的尸体，补一帧隐藏点占位，
+        /// 让时间线至少出现一个红色 --:--。
+        /// </summary>
+        /// <remarks>
+        /// 已报告的尸体不处理（时间正常显示）。占位帧直接走 <c>Replicator.Participants</c>，
+        /// 不经 <c>TimelineRecorder.Send</c>，避免被时钟破坏的 Prefix 缓存/打乱。
+        /// </remarks>
+        [HarmonyPatch(typeof(ServerGameRoom), "StartDetective")]
+        internal static class DetectiveHook
+        {
+            [HarmonyPostfix]
+            private static void Postfix()
+            {
+                if (!FeatureLoader.Enabled<ShootReminderFeature>()) return;
+
+                try
+                {
+                    PlaceHiddenFrames();
+                }
+                catch (global::System.Exception ex)
+                {
+                    global::ClueDetail.Core.Log.Exception(ex, "拍摄提醒：补隐藏点占位失败。");
+                }
+            }
+        }
+
+        private static void PlaceHiddenFrames()
+        {
+            ServerGameRoom room = ServerGameRoom.Instance;
+            ServerTimelineRecorder recorder = ServerTimelineRecorder.Instance;
+            if (room == null || room.CorpseMetas == null || recorder == null || recorder.Offset < 0)
+            {
+                return;
+            }
+
+            int offset = recorder.Offset;
+            int first = TimelinePipeline.FirstRegular(offset);
+            int last = TimelinePipeline.LastRegular(offset);
+            int sent = 0;
+
+            foreach (ServerGameRoom.CorpseMeta meta in room.CorpseMetas.Values)
+            {
+                if (meta == null || meta.IsReport)
+                {
+                    continue;       // 已报告 ⇒ 时间正常显示，不占位
+                }
+
+                int hidden = HiddenWindow.Predict(meta.DeadTime, meta.VictimId, offset, first, last);
+                if (hidden <= 0)
+                {
+                    continue;
+                }
+
+                global::Server.Game.Replicator.Participants(new S_TIMELINE_FRAME
+                {
+                    Offset = offset,
+                    Frame = new TimelineFrame { Time = hidden },
+                });
+                sent++;
+            }
+
+            if (sent > 0)
+            {
+                global::ClueDetail.Core.Log.Info(
+                    $"拍摄提醒：调查阶段补 {sent} 帧隐藏点占位（客户端显示 --:--）。");
+            }
+        }
         private static void Tick()
         {
             ServerGameRoom room = ServerGameRoom.Instance;

@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -111,9 +111,51 @@ namespace ClueDetail.Core.Timeline
             global::ClueDetail.Core.Log.Info($"回放管线已挂载（处理器 {Handlers.Count} 个）。");
         }
 
+        /// <summary>已经实际发出去的帧时间（供占位帧复刻客户端的常规帧范围）。</summary>
+        private static readonly HashSet<int> Sent = new HashSet<int>();
+
+        internal static int FirstRegular(int offset)
+        {
+            int first = int.MaxValue;
+            foreach (int t in Sent)
+            {
+                if (offset >= 0 && ((t - offset) % 10 + 10) % 10 == 0 && t < first)
+                {
+                    first = t;
+                }
+            }
+
+            return first;
+        }
+
+        internal static int LastRegular(int offset)
+        {
+            int last = int.MinValue;
+            foreach (int t in Sent)
+            {
+                if (offset >= 0 && ((t - offset) % 10 + 10) % 10 == 0 && t > last)
+                {
+                    last = t;
+                }
+            }
+
+            return last;
+        }
+
+        internal static void ClearSent()
+        {
+            Sent.Clear();
+        }
+
         private static bool SendPrefix(TimelineFrame frame)
         {
-            return Run(frame, 0, Stage.Transform);
+            bool pass = Run(frame, 0, Stage.Transform);
+            if (pass && frame != null)
+            {
+                Sent.Add(frame.Time);
+            }
+
+            return pass;
         }
 
         private static bool TickPrefix(int surviveTime)

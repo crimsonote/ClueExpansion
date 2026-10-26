@@ -110,6 +110,9 @@ namespace ClueDetail.Features.Host.ShootReminder
                 "OffsetMax",
                 10,
                 "本模块随机偏移的上界（不含）。默认 [0,10) 与原版一致。");
+
+            // 录制节拍注册到回放管线（唯一挂点是 Core/Timeline/Pipeline）。
+            RegisterPipeline();
         }
 
         internal static bool ToAllValue => ToAll != null && ToAll.Value;
