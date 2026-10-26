@@ -1,4 +1,4 @@
-﻿﻿# ClueDetail 开发规范
+﻿﻿﻿# ClueDetail 开发规范
 
 《Deadly Trick》的**独立** BepInEx 5 插件，用于还原 0.1.18 从线索里移除的「详细活动」。
 
@@ -303,14 +303,18 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
     ⑤ **日志开关**：基础设施段 `[Log] Enabled`（默认开）控制 `Log.Info`，
        `Warn` / `Error` / `Exception` 不受影响。热读，改 `.cfg` 立即生效。
 
-20. **回放拍摄提醒**（2026-10-23，待实机）：`Features/Host/ShootReminder/` —— 挂
-    `Server.Game.TimelineRecorder.Send(TimelineFrame)` 的 **Postfix**。游戏每 10 分钟采集一次回放帧，
-    每局有一个 0–10 的起始偏移（`TimelineRecorder.Offset`）；帧时间相对偏移 `% 60 == 10`
-    （= 每小时第 2 次拍摄）时，给黑方 / 黑幕发 `S_PLAY_EFFECT{BlackOutVfx}`
-    （客户端 `DevicesManager.PlayEffect` 是 2 秒黑屏，中心 ≈ 拍摄时刻 +1 秒）。
-    配置 `[ClueShootReminder] ToAll`（默认 false，只发黑方/黑幕）、`EffectChoice`（0=BlackOut，1=MineBomb）。
-    **与时钟破坏无关**：不读 `ShadowSabotage` 任何状态，任何生存阶段都按节拍提醒；
-    时钟破坏期间 `Send` 被 `ShadowSabotage` 的 Prefix 拦下，Postfix 自然不跑。
+20. **回放管线 + 拍摄提醒**（2026-10-26，待实机）：`Core/Timeline/` 是回放帧的**唯一挂点**
+    （`Pipeline.Mount` 挂 `TimelineRecorder.Send` 与 `OnSurvivalTick` 两个 Prefix），
+    各功能只注册阶段处理器：`Plan`（是否采集）→ `Capture`（占位/改写）→ `Transform`（缓存/打乱）。
+    - `Features/Host/ShootReminder/`：`Plan(100)` 按 `RecordCron` 决定采集；`StartDetective` 时
+      对 `CorpseMeta.IsReport == false` 的尸体补一帧 `firstHidden` 占位（直接 `Replicator.Participants`，
+      不经 `Send`）⇒ 客户端显示红色 `--:--`；敏感期（`|t - DeadTime| ≤ GuardSeconds`）不采集，防泄露。
+    - `Features/Host/ShadowSabotage/`：`Transform(200)` 承接原 `TimelineReplayDelayHook.OnSend`
+      （时钟窗口内缓存、修复后打乱补发）；独立的 `TimelineReplaySendHook` 已删除。
+    - 配置 `[ClueShootReminder]`：`RecordCron` / `ReminderCron` / `OffsetMin/Max` /
+      `LeadSeconds` / `EffectChoice` / `EveryShot` / `ToAll` / `GuardSeconds`。
+    - 隐藏点复刻在 `Core/Timeline/HiddenWindow.cs`（`Pick` 哈希 + `AddOption` 边界），
+      与客户端 `TryGetHiddenWindow` 逐字一致；差一个候选占位帧就会泄露。
 ### 搁置（等用户决策，2026-10-20）
 
 - **头像与「某人」文本无法同时在纯服务端成立**：`UI_ClueSubItem.FillText`（:86635）
