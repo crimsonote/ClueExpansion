@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿using System;
 using System.IO;
 using BepInEx;
 using BepInEx.Configuration;
@@ -44,6 +44,7 @@ namespace ClueDetail
             // 基础设施段 [Log]：Info 级总开关（减少持续写盘）。必须在功能装载之前绑好。
             global::ClueDetail.Core.Log.Bind(Cfg);
 
+#if TIMELINE
             // 回放帧管线：唯一的 Send / OnSurvivalTick 挂点（当前为空壳，行为等价）。
             try
             {
@@ -53,6 +54,8 @@ namespace ClueDetail
             {
                 Log.LogWarning($"[ClueDetail] 回放管线挂载失败（{ex.GetType().Name}: {ex.Message}）。");
             }
+#endif
+
 
             var result = FeatureLoader.Load(Cfg, Logger);
 

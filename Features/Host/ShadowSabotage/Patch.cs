@@ -10,7 +10,9 @@ using ServerGameRoom = Server.Game.GameRoom;
 using ServerGameHostPeerSession = Server.Game.HostPeerSession;
 using ServerTimeManager = Server.Game.TimeManager;
 using ServerMirror = Server.Game.Mirror;
+#if TIMELINE
 using ServerTimelineRecorder = Server.Game.TimelineRecorder;
+#endif   // TIMELINE
 
 namespace ClueDetail.Features.Host.ShadowSabotage
 {
@@ -203,7 +205,9 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                     QuenchImpossibleMirrors();
 
                     // 兜底：时钟一直没修好、直接进调查阶段时，把攒下的回放帧补发出去。
+#if TIMELINE
                     TimelineReplayDelayHook.Flush();
+#endif   // TIMELINE
                 }
                 catch (global::System.Exception ex)
                 {
@@ -588,6 +592,7 @@ namespace ClueDetail.Features.Host.ShadowSabotage
         /// <summary>
         /// 0.1.20 线索回放（Timeline）里的镜子：按破坏窗口改写帧内显示。
         /// </summary>
+#if TIMELINE   // 回放：0.1.21 已删除该系统的类型
         /// <remarks>
         /// <para>
         /// 只改 <c>TimelineRecorder.Capture</c> 产出的 <c>TimelineFrame</c> 副本，
@@ -1115,5 +1120,6 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                 TimelineReplayDelayHook.OnClear();
             }
         }
+#endif   // TIMELINE
     }
 }

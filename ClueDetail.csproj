@@ -1,6 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
+    <PropertyGroup>
+    <!-- 0.1.21 删除了回放时间线系统；回放代码用 #if TIMELINE 保留，-p:HasTimeline=true 可重新启用。 -->
+    <HasTimeline Condition="'$(HasTimeline)' == ''">false</HasTimeline>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(HasTimeline)' == 'true'">
+    <DefineConstants>$(DefineConstants);TIMELINE</DefineConstants>
+  </PropertyGroup>
+<PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
     <AssemblyName>ClueDetail</AssemblyName>
     <Description>Deadly Trick - restore detailed clue activity records (0.1.18 removed the {what} segment)</Description>

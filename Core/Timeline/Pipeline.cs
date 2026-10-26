@@ -1,4 +1,5 @@
-﻿﻿﻿using System;
+﻿#if TIMELINE   // 0.1.21 删除了回放时间线系统（TimelineRecorder / TimelineFrame 等）；定义 TIMELINE 才编译
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -209,3 +210,4 @@ namespace ClueDetail.Core.Timeline
         }
     }
 }
+#endif

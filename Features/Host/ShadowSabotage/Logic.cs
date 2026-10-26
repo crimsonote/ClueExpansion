@@ -708,10 +708,12 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                 state.RepairedAt = tm2 != null ? tm2.SurviveTime : 0;
 
                 // 时钟修好：把破坏期间攒下的回放帧整体打乱后补发。
+#if TIMELINE
                 if (state.Kind == BreakerKind.Clock)
                 {
                     TimelineReplayDelayHook.Flush();
                 }
+#endif
             }
 
             SetSlot0(device, state.Broken ? 2 : 0);

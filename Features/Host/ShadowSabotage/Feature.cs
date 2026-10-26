@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿using BepInEx.Configuration;
+﻿using BepInEx.Configuration;
 using ClueDetail.Core;
 
 namespace ClueDetail.Features.Host.ShadowSabotage
@@ -210,8 +210,10 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                 "true = 三帧全部原样保留，交给原版客户端划掉（观感最接近原版）；\n" +
                 "false = 只保留三个时间 key，死亡帧的内容参与轮选（避免从 --:-- 的格子认出作案内容）。");
 
+#if TIMELINE
             // 时钟污染对回放帧的缓存/打乱注册到回放管线（唯一挂点是 Core/Timeline/Pipeline）。
             RegisterClockPipeline();
+#endif
         }
 
         // ══════════════════ 生命周期 ══════════════════

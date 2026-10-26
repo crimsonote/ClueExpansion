@@ -1,4 +1,5 @@
-﻿﻿﻿﻿using BepInEx.Configuration;
+﻿#if TIMELINE   // 0.1.21 删除了回放时间线系统（TimelineRecorder / TimelineFrame 等）；定义 TIMELINE 才编译
+using BepInEx.Configuration;
 using ClueDetail.Core;
 
 namespace ClueDetail.Features.Host.ShootReminder
@@ -144,3 +145,4 @@ namespace ClueDetail.Features.Host.ShootReminder
         internal static int GuardSecondsValue => GuardSeconds != null ? GuardSeconds.Value : 20;
     }
 }
+#endif
