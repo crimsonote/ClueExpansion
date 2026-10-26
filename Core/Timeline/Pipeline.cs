@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿﻿﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
@@ -107,6 +107,14 @@ namespace ClueDetail.Core.Timeline
                 global::ClueDetail.Core.Log.Warn("回放管线：找不到 TimelineRecorder.OnSurvivalTick，Plan 阶段不可用。");
             }
 
+            MethodInfo clear = AccessTools.Method(
+                typeof(ServerTimelineRecorder), nameof(ServerTimelineRecorder.Clear));
+            if (clear != null)
+            {
+                harmony.Patch(clear,
+                    postfix: new HarmonyMethod(typeof(TimelinePipeline), nameof(ClearPostfix)));
+            }
+
             _mounted = true;
             global::ClueDetail.Core.Log.Info($"回放管线已挂载（处理器 {Handlers.Count} 个）。");
         }
@@ -145,6 +153,11 @@ namespace ClueDetail.Core.Timeline
         internal static void ClearSent()
         {
             Sent.Clear();
+        }
+
+        private static void ClearPostfix()
+        {
+            Sent.Clear();       // 换局：新的一局从头记录帧时间
         }
 
         private static bool SendPrefix(TimelineFrame frame)
