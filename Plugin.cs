@@ -1,8 +1,9 @@
-﻿using System;
+﻿﻿using System;
 using System.IO;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
+using HarmonyLib;
 using ClueDetail.Core;
 using ClueDetail.Core.Dt;
 
@@ -42,6 +43,16 @@ namespace ClueDetail
 
             // 基础设施段 [Log]：Info 级总开关（减少持续写盘）。必须在功能装载之前绑好。
             global::ClueDetail.Core.Log.Bind(Cfg);
+
+            // 回放帧管线：唯一的 Send / OnSurvivalTick 挂点（当前为空壳，行为等价）。
+            try
+            {
+                ClueDetail.Core.Timeline.TimelinePipeline.Mount(new Harmony(Guid + ".timeline"));
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning($"[ClueDetail] 回放管线挂载失败（{ex.GetType().Name}: {ex.Message}）。");
+            }
 
             var result = FeatureLoader.Load(Cfg, Logger);
 
