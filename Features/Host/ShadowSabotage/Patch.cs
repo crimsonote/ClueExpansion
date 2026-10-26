@@ -1094,16 +1094,15 @@ namespace ClueDetail.Features.Host.ShadowSabotage
             }
         }
 
-        /// <summary>拦截 <c>TimelineRecorder.Send</c>：时钟破坏期内的帧先缓存。</summary>
-        [HarmonyPatch(typeof(ServerTimelineRecorder), "Send", new[] { typeof(TimelineFrame) })]
-        internal static class TimelineReplaySendHook
+        /// <summary>把时钟破坏的帧缓存注册到回放管线（不再自己挂 Send）。</summary>
+        internal static void RegisterClockPipeline()
         {
-            [HarmonyPrefix]
-            private static bool Prefix(TimelineFrame frame)
-            {
-                if (!FeatureLoader.Enabled<ShadowSabotageFeature>()) return true;
-                return TimelineReplayDelayHook.OnSend(frame);
-            }
+            global::ClueDetail.Core.Timeline.TimelinePipeline.Register(
+                "ShadowSabotage.Clock",
+                global::ClueDetail.Core.Timeline.TimelinePipeline.Stage.Transform,
+                200,
+                (frame, surviveTime, stage) =>
+                    !FeatureLoader.Enabled<ShadowSabotageFeature>() || TimelineReplayDelayHook.OnSend(frame));
         }
 
         /// <summary>换局（<c>TimelineRecorder.Clear</c>）时清空缓存。</summary>

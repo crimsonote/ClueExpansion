@@ -209,6 +209,9 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                 "时钟破坏期间被延迟的回放帧里，销毁帧（死亡帧 / firstHidden / firstHidden+10）怎么处理：\n" +
                 "true = 三帧全部原样保留，交给原版客户端划掉（观感最接近原版）；\n" +
                 "false = 只保留三个时间 key，死亡帧的内容参与轮选（避免从 --:-- 的格子认出作案内容）。");
+
+            // 时钟污染对回放帧的缓存/打乱注册到回放管线（唯一挂点是 Core/Timeline/Pipeline）。
+            RegisterClockPipeline();
         }
 
         // ══════════════════ 生命周期 ══════════════════
