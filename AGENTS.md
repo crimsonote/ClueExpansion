@@ -1,4 +1,4 @@
-﻿﻿# ClueDetail 开发规范
+﻿﻿﻿# ClueDetail 开发规范
 
 《Deadly Trick》的**独立** BepInEx 5 插件，用于还原 0.1.18 从线索里移除的「详细活动」。
 
@@ -143,6 +143,7 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 | **游戏内聊天命令**：`/say` 私聊、`/clue` 线索检索、`/help` 报到式帮助、会议自动线索报告、与其它模块的共存约定 | `docs/游戏内命令.md` |
 | prefab / bundle 的坑与节点真相 | `docs/prefab与bundle.md` |
 | **彩蛋：尸体撒花**：四层判定、`Corpse.RoomID` 恒 0、`CompositeCollider2D` 陷阱、离线模拟手法 | `docs/彩蛋撒花.md` |
+| **回放时间线**：红色 `--:--` 的四条件、隐藏窗口只有 3 个点、`IsRegular` 硬编码 10、20 分钟录制的影响 | `docs/回放时间线.md` |
 | 一次性调查、被证伪的方案、脚本 | `D:\git\DT_Tools\.tmps\`（**不进任何仓库**） |
 
 ## 5. 游戏 API 锚点（0.1.18）→ `docs/游戏API锚点.md`
