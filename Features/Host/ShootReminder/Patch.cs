@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿using ClueDetail.Core;
+﻿﻿﻿﻿﻿﻿using ClueDetail.Core;
 using ClueDetail.Core.Timeline;
 using HarmonyLib;
 using Protocol;
@@ -43,7 +43,8 @@ namespace ClueDetail.Features.Host.ShootReminder
                 "ShootReminder.Record",
                 TimelinePipeline.Stage.Plan,
                 100,
-                (frame, surviveTime, stage) => ShouldCapture(surviveTime));
+                (frame, surviveTime, stage) =>
+                    !FeatureLoader.Enabled<ShootReminderFeature>() || ShouldCapture(surviveTime));
         }
 
         /// <summary>决定这一 tick 要不要采集（true = 放行原版采集）。</summary>
