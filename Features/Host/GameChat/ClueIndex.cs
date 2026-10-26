@@ -117,8 +117,17 @@ namespace ClueDetail.Features.Host.GameChat
         {
             string who = WhoOf(row.PlayerId, row.RealOwner, viewerId);
             string room = RoomNameOf(row.RoomId);
-        string act = ActOf(row.PlayerId, row.What, row.Breaker, row.DeviceId);
-            return $"{ClockOf(row.Time)} · {room} · {who} · {act}";
+            string act = ActOf(row.PlayerId, row.What, row.Breaker, row.DeviceId);
+            string when = ClockOf(row.Time);
+
+            // 与官方文本消息同句式：`{谁}在{时间}于{房间}{动作}`；
+            // 销毁线索多一段「{设备}处」（官方只到房间，这是 /clue 的增强）。
+            if (IsDestroyRow(row) && TryDeviceName(row.DeviceId, out string dev))
+            {
+                return $"{who}在{when}于{room}{dev}处{act}";
+            }
+
+            return $"{who}在{when}于{room}{act}";
         }
 
         /// <summary>
@@ -210,25 +219,35 @@ namespace ClueDetail.Features.Host.GameChat
 
             if (Define.IsDestroyEvidenceClue(new PropositionInfo { PlayerId = playerId }))
             {
-                // 销毁线索补设备名：`黑 · 电脑销毁了证据`（官方只到房间，这是 /clue 的增强）。
-                // 词条缺失时 GetText 返回英文 key，此时不拼，避免聊天框里出现 WComputer。
-                string act = Managers.GetText(Define.WHAT_DESTROY_EVIDENCE);
-                EWhatType dev = ClueDetail.Core.ActivityMap.WhatOfDevice(deviceId);
-                if (dev != EWhatType.WNone)
-                {
-                    string devName = Managers.GetText(dev.ToString());
-                    if (!string.IsNullOrEmpty(devName) && devName != dev.ToString())
-                    {
-                        act = devName + act;
-                    }
-                }
-
-                return act;
+                return Managers.GetText(Define.WHAT_DESTROY_EVIDENCE);
             }
 
             return what == 0 ? string.Empty : WhatNameOf(what);
         }
 
+        private static bool IsDestroyRow(ClueRow row)
+        {
+            return row != null && Define.IsDestroyEvidenceClue(new PropositionInfo { PlayerId = row.PlayerId });
+        }
+
+        private static bool TryDeviceName(int deviceId, out string name)
+        {
+            name = null;
+            EWhatType dev = ClueDetail.Core.ActivityMap.WhatOfDevice(deviceId);
+            if (dev == EWhatType.WNone)
+            {
+                return false;
+            }
+
+            string text = Managers.GetText(dev.ToString());
+            if (string.IsNullOrEmpty(text) || text == dev.ToString())
+            {
+                return false;       // 缺词条 ⇒ 不拼英文 key
+            }
+
+            name = text;
+            return true;
+        }
         // ══════════════════ 搜索 ══════════════════
 
         /// <summary>
