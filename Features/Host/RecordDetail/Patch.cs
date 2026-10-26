@@ -204,6 +204,14 @@ namespace ClueDetail.Features.Host.RecordDetail
                     return;
                 }
 
+                // 房主本机也记一份「线索 → 设备号」：客户端的 GameClueMirror.Add 对房主
+                // 不走（Handle_S_ADD_CLUE 直接跳过房主），否则「销毁了证据」的卡面
+                // 在房主视角永远只能靠房间兜底。
+                if (add.DeviceId != 0)
+                {
+                    ActivityMap.Remember(add.Info.PlayerId, add.Info.Time, add.Info.RoomId, add.DeviceId);
+                }
+
                 int what = DetailStore.Recall(add.Info.PlayerId, add.Info.Time, add.Info.RoomId);
                 Diagnostics.TraceHost(add.Info.PlayerId, add.Info.Time, add.Info.RoomId, what, what != 0);
                 if (what != 0)

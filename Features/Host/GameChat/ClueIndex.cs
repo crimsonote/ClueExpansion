@@ -20,6 +20,7 @@ namespace ClueDetail.Features.Host.GameChat
             public int RoomId;
             public int What;        // EWhatType；0 = 未知
             public int RealOwner;   // 未知字段 103：身份污染时的真实当事人（0 = 无）
+            public int DeviceId;    // 线索所属设备（销毁证据时用来补设备名）
             public string Text;     // 按**观察者**渲染的一行（查询时填，见 Render）
             public string Key;      // 去重键（玩家:时间:房间）
 
@@ -87,6 +88,7 @@ namespace ClueDetail.Features.Host.GameChat
                     RoomId = info.RoomId,
                     What = what,
                     Breaker = breaker,
+                    DeviceId = device.ID,
                     RealOwner = ClueDetail.Core.UnknownFields.GetRealOwner(info),
                 };
                 row.Key = KeyOf(info.PlayerId, info.Time, info.RoomId);
@@ -115,7 +117,7 @@ namespace ClueDetail.Features.Host.GameChat
         {
             string who = WhoOf(row.PlayerId, row.RealOwner, viewerId);
             string room = RoomNameOf(row.RoomId);
-        string act = ActOf(row.PlayerId, row.What, row.Breaker);
+        string act = ActOf(row.PlayerId, row.What, row.Breaker, row.DeviceId);
             return $"{ClockOf(row.Time)} · {room} · {who} · {act}";
         }
 
@@ -184,7 +186,7 @@ namespace ClueDetail.Features.Host.GameChat
         }
 
         /// <summary>活动：角色线索走原版两选一，其余走设备活动词条。</summary>
-        private static string ActOf(int playerId, int what, int breaker = -1)
+        private static string ActOf(int playerId, int what, int breaker = -1, int deviceId = 0)
         {
             // ══════════════════ 临时判例（2026-10-20，可整体移除）══════════════════
             // 黑幕关闭破坏点时，/clue 里显示它具体关了什么，而不是笼统的「切断了电力」。
@@ -208,7 +210,20 @@ namespace ClueDetail.Features.Host.GameChat
 
             if (Define.IsDestroyEvidenceClue(new PropositionInfo { PlayerId = playerId }))
             {
-                return Managers.GetText(Define.WHAT_DESTROY_EVIDENCE);
+                // 销毁线索补设备名：`黑 · 电脑销毁了证据`（官方只到房间，这是 /clue 的增强）。
+                // 词条缺失时 GetText 返回英文 key，此时不拼，避免聊天框里出现 WComputer。
+                string act = Managers.GetText(Define.WHAT_DESTROY_EVIDENCE);
+                EWhatType dev = ClueDetail.Core.ActivityMap.WhatOfDevice(deviceId);
+                if (dev != EWhatType.WNone)
+                {
+                    string devName = Managers.GetText(dev.ToString());
+                    if (!string.IsNullOrEmpty(devName) && devName != dev.ToString())
+                    {
+                        act = devName + act;
+                    }
+                }
+
+                return act;
             }
 
             return what == 0 ? string.Empty : WhatNameOf(what);
@@ -334,6 +349,7 @@ namespace ClueDetail.Features.Host.GameChat
                         RoomId = info.RoomId,
                         What = what,
                         RealOwner = ClueDetail.Core.UnknownFields.GetRealOwner(info),
+                        DeviceId = device.ID,
                         Key = key,
                     });
                 }
