@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using ClueDetail.Core;
+﻿﻿﻿﻿﻿using ClueDetail.Core;
 using ClueDetail.Core.Timeline;
 using HarmonyLib;
 using Protocol;
@@ -49,6 +49,12 @@ namespace ClueDetail.Features.Host.ShootReminder
         /// <summary>决定这一 tick 要不要采集（true = 放行原版采集）。</summary>
         private static bool ShouldCapture(int surviveTime)
         {
+            // 泄露防护：未报告尸体的敏感期内不采集，避免出现「不在 _hidden、可正常查看」的帧。
+            if (IsInUnreportedGuard(surviveTime))
+            {
+                return false;
+            }
+
             string cron = RecordCronValue;
             if (CronSchedule.IsDefault(cron))
             {
@@ -149,6 +155,33 @@ namespace ClueDetail.Features.Host.ShootReminder
                 global::ClueDetail.Core.Log.Info(
                     $"拍摄提醒：调查阶段补 {sent} 帧隐藏点占位（客户端显示 --:--）。");
             }
+        }
+        /// <summary>是否落在某具未报告尸体的敏感期内。</summary>
+        private static bool IsInUnreportedGuard(int surviveTime)
+        {
+            int guard = GuardSecondsValue;
+            if (guard <= 0)
+            {
+                return false;
+            }
+
+            ServerGameRoom room = ServerGameRoom.Instance;
+            if (room == null || room.CorpseMetas == null)
+            {
+                return false;
+            }
+
+            foreach (ServerGameRoom.CorpseMeta meta in room.CorpseMetas.Values)
+            {
+                if (meta != null
+                    && !meta.IsReport
+                    && global::System.Math.Abs(surviveTime - meta.DeadTime) <= guard)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
         private static void Tick()
         {

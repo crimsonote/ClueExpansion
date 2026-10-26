@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿using BepInEx.Configuration;
+﻿﻿﻿﻿using BepInEx.Configuration;
 using ClueDetail.Core;
 
 namespace ClueDetail.Features.Host.ShootReminder
@@ -45,6 +45,9 @@ namespace ClueDetail.Features.Host.ShootReminder
 
         /// <summary>本模块随机偏移下界（含）。录制与提醒共用。</summary>
         public static ConfigEntry<int> OffsetMin { get; private set; }
+
+        /// <summary>未报告尸体的敏感期（游戏秒），期间不采集。</summary>
+        public static ConfigEntry<int> GuardSeconds { get; private set; }
 
         /// <summary>本模块随机偏移上界（不含）。</summary>
         public static ConfigEntry<int> OffsetMax { get; private set; }
@@ -111,6 +114,13 @@ namespace ClueDetail.Features.Host.ShootReminder
                 10,
                 "本模块随机偏移的上界（不含）。默认 [0,10) 与原版一致。");
 
+            GuardSeconds = config.Bind(
+                section,
+                "GuardSeconds",
+                20,
+                "未报告尸体的敏感期（游戏秒）：录制帧落在 |t - 死亡时刻| ≤ 该值内时不采集，\n" +
+                "防止回放里出现「未隐藏、可正常查看」的案发画面。0 = 不抑制。");
+
             // 录制节拍注册到回放管线（唯一挂点是 Core/Timeline/Pipeline）。
             RegisterPipeline();
         }
@@ -130,5 +140,7 @@ namespace ClueDetail.Features.Host.ShootReminder
         internal static int OffsetMinValue => OffsetMin != null ? OffsetMin.Value : 0;
 
         internal static int OffsetMaxValue => OffsetMax != null ? OffsetMax.Value : 10;
+
+        internal static int GuardSecondsValue => GuardSeconds != null ? GuardSeconds.Value : 20;
     }
 }
