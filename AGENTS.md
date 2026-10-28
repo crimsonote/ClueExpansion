@@ -1,4 +1,4 @@
-﻿﻿﻿# ClueDetail 开发规范
+﻿# ClueDetail 开发规范
 
 《Deadly Trick》的**独立** BepInEx 5 插件，用于还原 0.1.18 从线索里移除的「详细活动」。
 
@@ -146,6 +146,14 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 | **回放时间线**：红色 `--:--` 的四条件、隐藏窗口只有 3 个点、`IsRegular` 硬编码 10、20 分钟录制的影响 | `docs/回放时间线.md` |
 | 一次性调查、被证伪的方案、脚本 | `D:\git\DT_Tools\.tmps\`（**不进任何仓库**） |
 
+9. **`EPlayerColor` 的语义不能按名字猜**（2026-10-28 连错三处）：
+   `White` = 白、**`Black` = 黑（杀手）**、**`Dark` = 黑幕**。
+   依据：开局分配 `Players[randomNumber].Color = EPlayerColor.Dark` + `SetMasterMind(...)`
+   （0.1.20 :179355-179359），黑杀手是 `player.Color = EPlayerColor.Black`（:181045）。
+   - 「黑方全体」⇒ `Black || Dark`；
+   - 「只有黑幕」⇒ `Dark`（破坏点守卫、`/say` 的黑幕侧）；
+   - 「只有黑」⇒ `Black`（`/say` 的黑侧）。
+   凡是用到颜色判定的地方，注释里必须写明这一行。
 ## 5. 游戏 API 锚点（0.1.18）→ `docs/游戏API锚点.md`
 
 基准：`0.1.18`（反编译口径与全部行号锚点见该文档）。**引用游戏 API 之前必须逐个核对行号**；
