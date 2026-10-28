@@ -171,15 +171,15 @@ namespace ClueDetail.Features.Host.GameChat
                 return null;
             }
 
-            bool isMastermind = room.MasterMind == self;
-            bool isDark = !isMastermind && self.Color == EPlayerColor.Dark;
-            if (!isMastermind && !isDark)
+            bool isMastermind = room.MasterMind == self || self.Color == EPlayerColor.Dark;
+            bool isBlack = !isMastermind && self.Color == EPlayerColor.Black;
+            if (!isMastermind && !isBlack)
             {
                 return null;
             }
 
             // 黑 → 黑幕：黑幕可能是 AI 假人，不一定在 room.Players 里，直接取 MasterMind。
-            if (isDark)
+            if (isBlack)
             {
                 return room.MasterMind;
             }
@@ -193,7 +193,7 @@ namespace ClueDetail.Features.Host.GameChat
                     continue;
                 }
 
-                if (p.Color == EPlayerColor.Dark)
+                if (p.Color == EPlayerColor.Black)
                 {
                     return p;
                 }
