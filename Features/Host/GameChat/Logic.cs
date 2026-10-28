@@ -83,31 +83,43 @@ namespace ClueDetail.Features.Host.GameChat
         /// <summary>/say 私聊。只在<b>大厅与会议</b>阶段可用；发信机频道不参与。</summary>
         private static void CmdSay(ServerGameRoom room, ServerGamePlayer player, string arg)
         {
-            if (room.State != EGameState.Lobby && room.State != EGameState.Trial)
+            // 2026-10-28 起调查阶段也可用（黑队沟通需要）。
+            if (room.State != EGameState.Lobby && room.State != EGameState.Trial && room.State != EGameState.Detective)
             {
-                Reply(room, player, "私聊只在大厅与会议阶段可用。");
+                Reply(room, player, "私聊只在大厅、会议与调查阶段可用。");
                 return;
             }
 
             string[] parts = arg.Split(new[] { ' ', '\t' }, global::System.StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 2)
+            if (parts.Length == 0)
             {
-                Reply(room, player, "用法：/say <昵称|玩家ID> <消息>（/who 看 ID）");
+                Reply(room, player, "用法：/say [昵称|玩家ID] <消息>（不带 ID 时黑队互发）");
                 return;
             }
 
-            string who = parts[0];
-            string message = arg.Substring(arg.IndexOf(who, global::System.StringComparison.Ordinal) + who.Length).Trim();
+            // 先按「第一段是玩家」解析；解析不到、且自己是黑/黑幕时，整句当消息直发队友。
+            ServerGamePlayer target = parts.Length >= 2 ? FindTarget(room, parts[0]) : null;
+            string message;
+            if (target != null)
+            {
+                string who = parts[0];
+                message = arg.Substring(arg.IndexOf(who, global::System.StringComparison.Ordinal) + who.Length).Trim();
+            }
+            else
+            {
+                target = FindPartner(room, player);
+                if (target == null)
+                {
+                    Reply(room, player, "用法：/say <昵称|玩家ID> <消息>（/who 看 ID）");
+                    return;
+                }
+
+                message = arg.Trim();
+            }
+
             if (message.Length == 0)
             {
-                Reply(room, player, "用法：/say <昵称|玩家ID> <消息>（/who 看 ID）");
-                return;
-            }
-
-            ServerGamePlayer target = FindTarget(room, who);
-            if (target == null)
-            {
-                Reply(room, player, $"找不到玩家「{who}」（可用昵称或座位号）。");
+                Reply(room, player, "用法：/say [昵称|玩家ID] <消息>");
                 return;
             }
 
@@ -128,6 +140,44 @@ namespace ClueDetail.Features.Host.GameChat
             SendChat(room, player, player, $"已向 {target.Name} 发送私聊：{message}", senderDead);
         }
 
+        /// <summary>
+        /// 黑队暗道：黑幕 ↔ 黑。返回对方；自己不是这两者时返回 null。
+        /// </summary>
+        private static ServerGamePlayer FindPartner(ServerGameRoom room, ServerGamePlayer self)
+        {
+            if (room == null || room.Players == null || self == null)
+            {
+                return null;
+            }
+
+            bool isMastermind = room.MasterMind == self;
+            bool isDark = !isMastermind && self.Color == EPlayerColor.Dark;
+            if (!isMastermind && !isDark)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < room.Players.Count; i++)
+            {
+                ServerGamePlayer p = room.Players[i];
+                if (p == null || p == self)
+                {
+                    continue;
+                }
+
+                if (isDark && p == room.MasterMind)
+                {
+                    return p;
+                }
+
+                if (isMastermind && p.Color == EPlayerColor.Dark)
+                {
+                    return p;
+                }
+            }
+
+            return null;
+        }
         /// <summary>按昵称（模糊）或座位号找玩家。</summary>
         private static ServerGamePlayer FindTarget(ServerGameRoom room, string who)
         {
