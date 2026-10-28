@@ -178,6 +178,13 @@ namespace ClueDetail.Features.Host.GameChat
                 return null;
             }
 
+            // 黑 → 黑幕：黑幕可能是 AI 假人，不一定在 room.Players 里，直接取 MasterMind。
+            if (isDark)
+            {
+                return room.MasterMind;
+            }
+
+            // 黑幕 → 黑：黑是真人，必须扫列表。
             for (int i = 0; i < room.Players.Count; i++)
             {
                 ServerGamePlayer p = room.Players[i];
@@ -186,12 +193,7 @@ namespace ClueDetail.Features.Host.GameChat
                     continue;
                 }
 
-                if (isDark && p == room.MasterMind)
-                {
-                    return p;
-                }
-
-                if (isMastermind && p.Color == EPlayerColor.Dark)
+                if (p.Color == EPlayerColor.Dark)
                 {
                     return p;
                 }
