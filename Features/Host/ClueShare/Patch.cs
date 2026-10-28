@@ -257,6 +257,16 @@ namespace ClueDetail.Features.Host.ClueShare
             }
 
             receiver.Session.Send(message);
+
+            // 调查阶段补发的这一批也要进 /clue 索引。
+            for (int i = 0; i < dm.Objects.Count; i++)
+            {
+                ServerDevice d = dm.Objects[i];
+                if (d != null)
+                {
+                    ClueDetail.Features.Host.GameChat.GameChatFeature.RememberShared(receiver, d.ID);
+                }
+            }
             global::ClueDetail.Core.Log.Info(
                 $"线索互通：调查阶段向 {receiver.Name} 补发队友线索 {message.InfoList.Count} 条。");
         }
@@ -306,10 +316,12 @@ namespace ClueDetail.Features.Host.ClueShare
             if (owner == blackId)
             {
                 mastermind.Session?.Send(add);
+                ClueDetail.Features.Host.GameChat.GameChatFeature.RememberShared(mastermind, add.DeviceId);
             }
             else if (owner == mmId)
             {
                 black.Session?.Send(add);
+                ClueDetail.Features.Host.GameChat.GameChatFeature.RememberShared(black, add.DeviceId);
             }
         }
 

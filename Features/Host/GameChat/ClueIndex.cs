@@ -40,6 +40,13 @@ namespace ClueDetail.Features.Host.GameChat
         private static readonly Dictionary<int, Dictionary<string, ClueRow>> Index =
             new Dictionary<int, Dictionary<string, ClueRow>>();
 
+        /// <summary>
+        /// 线索互通时补登记：被同步的一方没扫过这台设备，但 /clue 里应该能看到这条。
+        /// </summary>
+        internal static void RememberShared(ServerGamePlayer player, int deviceId)
+        {
+            RememberScan(ServerDeviceManager.Instance, player, deviceId);
+        }
         /// <summary>扫描时登记：把该设备当前的线索记到扫描者名下。</summary>
         private static void RememberScan(ServerDeviceManager dm, ServerGamePlayer player, int deviceId)
         {
