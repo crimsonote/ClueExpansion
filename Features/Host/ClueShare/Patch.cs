@@ -201,7 +201,8 @@ namespace ClueDetail.Features.Host.ClueShare
             for (int i = 0; i < room.Players.Count; i++)
             {
                 ServerGamePlayer p = room.Players[i];
-                if (p != null && p.PublicInfo != null && p.Color == EPlayerColor.Dark)
+                // ⚠️ EPlayerColor：Dark = 黑幕，Black = 黑（0.1.20 :179355-179359 / :181045）。
+                if (p != null && p.PublicInfo != null && p.Color == EPlayerColor.Black)
                 {
                     black = p;
                     break;
@@ -284,7 +285,8 @@ namespace ClueDetail.Features.Host.ClueShare
             for (int i = 0; i < room.Players.Count; i++)
             {
                 ServerGamePlayer p = room.Players[i];
-                if (p != null && p.PublicInfo != null && p.Color == EPlayerColor.Dark)
+                // ⚠️ EPlayerColor：Dark = 黑幕，Black = 黑（0.1.20 :179355-179359 / :181045）。
+                if (p != null && p.PublicInfo != null && p.Color == EPlayerColor.Black)
                 {
                     black = p;
                     break;
