@@ -109,10 +109,17 @@ namespace ClueDetail.Features.Host.GameChat
             if (who == "0")
             {
                 // 0 = 黑队暗道：黑幕 ↔ 黑。
+                // 分开报错：不是黑队 / 是黑队但队友不在线，两种原因不能混成一句。
+                if (!IsBlackTeam(room, player))
+                {
+                    Reply(room, player, "只有黑 / 黑幕才能用 /say 0。");
+                    return;
+                }
+
                 target = FindPartner(room, player);
                 if (target == null)
                 {
-                    Reply(room, player, "你不是黑/黑幕，或者没有队友。");
+                    Reply(room, player, "队友当前不在线。");
                     return;
                 }
             }
@@ -141,6 +148,17 @@ namespace ClueDetail.Features.Host.GameChat
             // 只有双方可见：目标一份、发送者一份回执，其余人一个字节都不发。
             SendChat(room, target, player, $"[私聊] {player.Name}：{message}", senderDead);
             SendChat(room, player, player, $"已向 {target.Name} 发送私聊：{message}", senderDead);
+        }
+
+        /// <summary>自己是不是黑队（黑幕或黑）。</summary>
+        private static bool IsBlackTeam(ServerGameRoom room, ServerGamePlayer self)
+        {
+            if (room == null || self == null)
+            {
+                return false;
+            }
+
+            return room.MasterMind == self || self.Color == EPlayerColor.Dark;
         }
 
         /// <summary>
