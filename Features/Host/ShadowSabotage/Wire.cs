@@ -687,6 +687,11 @@ namespace ClueDetail.Features.Host.ShadowSabotage
                 // 所以必须在这里显式给**非当事人**换成占位符，否则别人会直接读到真实 id。
                 // ⚠️ 103 在网线上一律清掉（否则装了本模块的别人能自己读出来是谁）。
                 copy.PlayerId = recipient == owner ? owner : PlaceholderPlayerId;
+                if (recipient == owner)
+                {
+                    global::ClueDetail.Features.Host.ClueShare.ClueShareFeature.OnDecrypted(recipient, info, copy);
+                }
+
                 ClueDetail.Core.UnknownFields.ClearValue(
                     copy, ClueDetail.Core.UnknownFields.RealOwnerFieldNumber);
             }

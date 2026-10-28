@@ -65,6 +65,130 @@ namespace ClueDetail.Features.Host.ClueShare
             }
         }
 
+        /// <summary>
+        /// 解密钩子：出站改写把某条「某人」线索按收件人改成实名后，如果同一
+        /// (房间, 时刻) 已经没有别的未解密「某人」，就用 <c>S_REMOVE_CLUE</c> 删掉旧的匿名条目。
+        /// </summary>
+        /// <remarks>
+        /// 由 <c>ShadowSabotage.Wire.RewriteOutflow</c> 在改写 <c>S_ADD_CLUE</c> /
+        /// <c>S_ADD_MY_CLUES</c> 时调用。开关关闭时什么都不做（两条都保留）。
+        /// 纯服务端：<c>S_REMOVE_CLUE</c> 是原版包，客户端原生处理。
+        /// </remarks>
+        internal static void OnDecrypted(int recipient, PropositionInfo anonymous, PropositionInfo real)
+        {
+            if (!FeatureLoader.Enabled<ClueShareFeature>() || !DedupValue)
+            {
+                return;
+            }
+
+            if (anonymous == null || real == null || real.PlayerId == 0 || anonymous.PlayerId != 0)
+            {
+                return;
+            }
+
+            if (HasOtherAnonymous(anonymous))
+            {
+                return;     // 还有未解密的「某人」⇒ 都保留
+            }
+
+            int deviceId = FindDeviceOf(anonymous);
+            if (deviceId == 0)
+            {
+                return;
+            }
+
+            SendRemove(recipient, deviceId, anonymous);
+        }
+
+        private static bool HasOtherAnonymous(PropositionInfo self)
+        {
+            ServerDeviceManager dm = ServerDeviceManager.Instance;
+            if (dm == null || dm.Objects == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < dm.Objects.Count; i++)
+            {
+                ServerDevice device = dm.Objects[i];
+                if (device == null || device.ClueList == null)
+                {
+                    continue;
+                }
+
+                for (int j = 0; j < device.ClueList.Count; j++)
+                {
+                    PropositionInfo clue = device.ClueList[j];
+                    if (clue == null || ReferenceEquals(clue, self))
+                    {
+                        continue;
+                    }
+
+                    if (clue.RoomId == self.RoomId
+                        && clue.Time == self.Time
+                        && clue.PlayerId == 0
+                        && UnknownFields.GetRealOwner(clue) != 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static int FindDeviceOf(PropositionInfo info)
+        {
+            ServerDeviceManager dm = ServerDeviceManager.Instance;
+            if (dm == null || dm.Objects == null)
+            {
+                return 0;
+            }
+
+            for (int i = 0; i < dm.Objects.Count; i++)
+            {
+                ServerDevice device = dm.Objects[i];
+                if (device == null || device.ClueList == null)
+                {
+                    continue;
+                }
+
+                for (int j = 0; j < device.ClueList.Count; j++)
+                {
+                    if (ReferenceEquals(device.ClueList[j], info))
+                    {
+                        return device.ID;
+                    }
+                }
+            }
+
+            return 0;
+        }
+
+        private static void SendRemove(int recipient, int deviceId, PropositionInfo anonymous)
+        {
+            ServerGameRoom room = ServerGameRoom.Instance;
+            if (room == null || room.Players == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < room.Players.Count; i++)
+            {
+                ServerGamePlayer p = room.Players[i];
+                if (p != null && p.PublicInfo != null && p.PublicInfo.PlayerId == recipient)
+                {
+                    p.Session?.Send(new S_REMOVE_CLUE
+                    {
+                        DeviceId = deviceId,
+                        Info = anonymous.Clone(),
+                    });
+                    global::ClueDetail.Core.Log.Info(
+                        $"线索互通：解密后剔除旧匿名条目（收件人 {recipient}，设备 {deviceId}，t={anonymous.Time}）。");
+                    return;
+                }
+            }
+        }
         private static void ShareAtDetective()
         {
             ServerGameRoom room = ServerGameRoom.Instance;
