@@ -158,7 +158,7 @@ namespace ClueDetail.Features.Host.GameChat
                 return false;
             }
 
-            return room.MasterMind == self || self.Color == EPlayerColor.Dark;
+            return room.MasterMind == self || self.Color == EPlayerColor.Dark || self.Color == EPlayerColor.Black;
         }
 
         /// <summary>
