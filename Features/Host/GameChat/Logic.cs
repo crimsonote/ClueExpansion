@@ -91,36 +91,39 @@ namespace ClueDetail.Features.Host.GameChat
             }
 
             string[] parts = arg.Split(new[] { ' ', '\t' }, global::System.StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 0)
+            if (parts.Length < 2)
             {
-                Reply(room, player, "用法：/say [昵称|玩家ID] <消息>（不带 ID 时黑队互发）");
+                Reply(room, player, "用法：/say <昵称|玩家ID|0> <消息>（0 = 黑队互发）");
                 return;
             }
 
-            // 先按「第一段是玩家」解析；解析不到、且自己是黑/黑幕时，整句当消息直发队友。
-            ServerGamePlayer target = parts.Length >= 2 ? FindTarget(room, parts[0]) : null;
-            string message;
-            if (target != null)
+            string who = parts[0];
+            string message = arg.Substring(arg.IndexOf(who, global::System.StringComparison.Ordinal) + who.Length).Trim();
+            if (message.Length == 0)
             {
-                string who = parts[0];
-                message = arg.Substring(arg.IndexOf(who, global::System.StringComparison.Ordinal) + who.Length).Trim();
+                Reply(room, player, "用法：/say <昵称|玩家ID|0> <消息>");
+                return;
             }
-            else
+
+            ServerGamePlayer target;
+            if (who == "0")
             {
+                // 0 = 黑队暗道：黑幕 ↔ 黑。
                 target = FindPartner(room, player);
                 if (target == null)
                 {
-                    Reply(room, player, "用法：/say <昵称|玩家ID> <消息>（/who 看 ID）");
+                    Reply(room, player, "你不是黑/黑幕，或者没有队友。");
                     return;
                 }
-
-                message = arg.Trim();
             }
-
-            if (message.Length == 0)
+            else
             {
-                Reply(room, player, "用法：/say [昵称|玩家ID] <消息>");
-                return;
+                target = FindTarget(room, who);
+                if (target == null)
+                {
+                    Reply(room, player, $"找不到玩家「{who}」（可用昵称或座位号）。");
+                    return;
+                }
             }
 
             if (target == player)
