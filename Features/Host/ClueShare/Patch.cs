@@ -272,6 +272,120 @@ namespace ClueDetail.Features.Host.ClueShare
         }
 
         /// <summary>二级：单条线索广播时转给队友。</summary>
+        /// <summary>
+        /// 二级：**扫描**（调查阶段真正的"搜索线索"）完成后，把结果同步给队友。
+        /// </summary>
+        /// <remarks>
+        /// ⚠️ 2026-10-28 修正：原来挂在 <c>S_ADD_CLUE</c> 广播上，但调查阶段搜索走的是
+        /// <c>S_SCAN_DEVICE</c>（只发给扫描者），那条路根本不会经过 <c>S_ADD_CLUE</c>。
+        /// </remarks>
+        [HarmonyPatch(typeof(ServerDeviceManager), "Scan", new[] { typeof(ServerGamePlayer), typeof(int) })]
+        internal static class ScanShareHook
+        {
+            [HarmonyPostfix]
+            private static void Postfix(ServerGamePlayer player, int id)
+            {
+                if (!FeatureLoader.Enabled<ClueShareFeature>()) return;
+                if (TierValue < 2) return;
+
+                try
+                {
+                    ShareScan(player, id);
+                }
+                catch (Exception ex)
+                {
+                    global::ClueDetail.Core.Log.Exception(ex, "线索互通：扫描同步失败。");
+                }
+            }
+        }
+
+        private static void ShareScan(ServerGamePlayer player, int deviceId)
+        {
+            if (player == null || player.PublicInfo == null)
+            {
+                return;
+            }
+
+            ServerGamePlayer partner = FindPartner(player);
+            if (partner == null || partner.Session == null)
+            {
+                return;
+            }
+
+            ServerDeviceManager dm = ServerDeviceManager.Instance;
+            if (dm == null || dm.Objects == null)
+            {
+                return;
+            }
+
+            ServerDevice device = null;
+            for (int i = 0; i < dm.Objects.Count; i++)
+            {
+                if (dm.Objects[i] != null && dm.Objects[i].ID == deviceId)
+                {
+                    device = dm.Objects[i];
+                    break;
+                }
+            }
+
+            if (device == null || device.ClueList == null || IsExcluded(device))
+            {
+                return;
+            }
+
+            var message = new S_SCAN_DEVICE();
+            for (int i = 0; i < device.ClueList.Count; i++)
+            {
+                PropositionInfo clue = device.ClueList[i];
+                if (clue != null && !clue.Destroyed)
+                {
+                    message.InfoList.Add(clue);
+                }
+            }
+
+            if (message.InfoList.Count == 0)
+            {
+                return;
+            }
+
+            partner.Session.Send(message);
+            ClueDetail.Features.Host.GameChat.GameChatFeature.RememberShared(partner, deviceId);
+            global::ClueDetail.Core.Log.Info(
+                $"线索互通：扫描同步 {message.InfoList.Count} 条（{player.Name} → {partner.Name}，设备 {deviceId}）。");
+        }
+
+        private static ServerGamePlayer FindPartner(ServerGamePlayer self)
+        {
+            ServerGameRoom room = ServerGameRoom.Instance;
+            if (room == null || room.Players == null)
+            {
+                return null;
+            }
+
+            bool isMastermind = room.MasterMind == self || self.Color == EPlayerColor.Dark;
+            bool isBlack = !isMastermind && self.Color == EPlayerColor.Black;
+
+            if (isBlack)
+            {
+                return room.MasterMind;
+            }
+
+            if (!isMastermind)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < room.Players.Count; i++)
+            {
+                ServerGamePlayer p = room.Players[i];
+                if (p != null && p != self && p.Color == EPlayerColor.Black)
+                {
+                    return p;
+                }
+            }
+
+            return null;
+        }
         private static void ShareOne(PbMessage packet)
         {
             if (!(packet is S_ADD_CLUE add) || add.Info == null)
