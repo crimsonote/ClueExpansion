@@ -70,6 +70,33 @@ namespace ClueDetail.Features.Host.GameChat
                 return;
             }
 
+            var rows = EnsureRows(player);
+            for (int i = 0; i < device.ClueList.Count; i++)
+            {
+                AddRow(rows, device, device.ClueList[i]);
+            }
+        }
+
+        /// <summary>
+        /// 只登记**实际转发给收件人**的那一条线索。
+        /// </summary>
+        /// <remarks>
+        /// 一级（调查阶段补发队友线索）只发同伴产生的那几条；若这里按设备登记，
+        /// 会把同一设备上白方玩家的线索也塞进收件人的 <c>/c</c> 索引，等于多给了信息。
+        /// 二级扫描本来就是整台设备，仍使用按设备登记的入口。
+        /// </remarks>
+        internal static void RememberShared(ServerGamePlayer player, ServerDevice device, PropositionInfo info)
+        {
+            if (player == null || player.PublicInfo == null || device == null || info == null || info.Destroyed)
+            {
+                return;
+            }
+
+            AddRow(EnsureRows(player), device, info);
+        }
+
+        private static Dictionary<string, ClueRow> EnsureRows(ServerGamePlayer player)
+        {
             int pid = player.PublicInfo.PlayerId;
             if (!Index.TryGetValue(pid, out var rows))
             {
@@ -77,30 +104,31 @@ namespace ClueDetail.Features.Host.GameChat
                 Index[pid] = rows;
             }
 
-                int breaker = device is BreakerDevice breakerDevice ? (int)breakerDevice.Kind : -1;
-            int what = device.DeviceData != null ? (int)device.DeviceData.WhatType : 0;
-            for (int i = 0; i < device.ClueList.Count; i++)
-            {
-                PropositionInfo info = device.ClueList[i];
-                if (info == null || info.Destroyed)
-                {
-                    continue;
-                }
+            return rows;
+        }
 
-                int display = ClueDetail.Core.UnknownFields.GetDisplayTime(info);
-                var row = new ClueRow
-                {
-                    PlayerId = info.PlayerId,
-                    Time = display != 0 ? display : info.Time,
-                    RoomId = info.RoomId,
-                    What = what,
-                    Breaker = breaker,
-                    DeviceId = device.ID,
-                    RealOwner = ClueDetail.Core.UnknownFields.GetRealOwner(info),
-                };
-                row.Key = KeyOf(info.PlayerId, info.Time, info.RoomId);
-                rows[row.Key] = row;
+        private static void AddRow(Dictionary<string, ClueRow> rows, ServerDevice device, PropositionInfo info)
+        {
+            if (info == null || info.Destroyed)
+            {
+                return;
             }
+
+            int breaker = device is BreakerDevice breakerDevice ? (int)breakerDevice.Kind : -1;
+            int what = device.DeviceData != null ? (int)device.DeviceData.WhatType : 0;
+            int display = ClueDetail.Core.UnknownFields.GetDisplayTime(info);
+            var row = new ClueRow
+            {
+                PlayerId = info.PlayerId,
+                Time = display != 0 ? display : info.Time,
+                RoomId = info.RoomId,
+                What = what,
+                Breaker = breaker,
+                DeviceId = device.ID,
+                RealOwner = ClueDetail.Core.UnknownFields.GetRealOwner(info),
+            };
+            row.Key = KeyOf(info.PlayerId, info.Time, info.RoomId);
+            rows[row.Key] = row;
         }
 
         /// <summary>换局/阶段切换时清空（线索不跨局）。</summary>
