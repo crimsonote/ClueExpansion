@@ -544,6 +544,94 @@ namespace ClueDetail.Features.Client.ClueCard
             return candidates[0];
         }
 
+        /// <summary>
+        /// 原版命题句依赖 <c>Util.GetPropositionSentence</c> 里
+        /// <c>GetPlayerCache(clue.OwnerId).PublicInfo.CharacterId</c> 的裸访问。
+        /// 伪证/线索的所有者离房后缓存会缺失，直接调用会让 <c>UI_ClueSubItem.Refresh</c>
+        /// 每帧抛空引用。所有者仍在时完全走原版格式；缺失时才尝试记录者，最后才用安全兜底句。
+        /// </summary>
+        private static string FormatPropositionSafely(ClueManager.Clue clue)
+        {
+            if (clue?.Info == null)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                if (Managers.Player?.GetPlayerCache(clue.OwnerId) != null)
+                {
+                    return Util.FormatProposition(clue) ?? string.Empty;
+                }
+
+                // 伪证的所有者是提交者，句子的角色名实际取记录者；记录者仍在缓存里时沿用原版格式化。
+                int fallbackOwner = clue.Info.PlayerId;
+                if (fallbackOwner > 0 && Managers.Player?.GetPlayerCache(fallbackOwner) != null)
+                {
+                    var surrogate = new ClueManager.Clue
+                    {
+                        IsStatement = clue.IsStatement,
+                        OwnerId = fallbackOwner,
+                        Info = clue.Info
+                    };
+                    return Util.FormatProposition(surrogate) ?? string.Empty;
+                }
+
+                LogSentenceFallbackOnce();
+            }
+            catch (global::System.Exception ex)
+            {
+                LogSentenceFallbackOnce("原版命题句渲染失败：" + ex.Message);
+            }
+
+            return BuildFallbackSentence(clue);
+        }
+
+        private static bool _sentenceFallbackLogged;
+
+        private static void LogSentenceFallbackOnce(string detail = null)
+        {
+            if (_sentenceFallbackLogged)
+            {
+                return;
+            }
+
+            _sentenceFallbackLogged = true;
+            string suffix = string.IsNullOrEmpty(detail) ? "所有者玩家缓存缺失" : detail;
+            global::ClueDetail.Core.Log.Warn(
+                "线索卡片：命题句改用安全兜底（" + suffix + "），不再让平板刷新抛空引用。");
+        }
+
+        private static string BuildFallbackSentence(ClueManager.Clue clue)
+        {
+            try
+            {
+                string who = Managers.GetText("WhoSomeone");
+                if (string.IsNullOrEmpty(who) || who == "WhoSomeone")
+                {
+                    who = "???";
+                }
+
+                string when = Util.FormatTimeSentence(clue.Info.Time);
+
+                string roomType = RoomTypeName(clue.Info.RoomId);
+                string where = string.IsNullOrEmpty(roomType) ? string.Empty : Managers.GetText(roomType);
+
+                string activity = ClueWhat.TextOf(ClueWhat.Resolve(clue));
+                if (string.IsNullOrEmpty(activity))
+                {
+                    activity = Localization.GenericActivity;
+                }
+
+                return who + " · " + when + " · " + where + (activity ?? string.Empty);
+            }
+            catch (global::System.Exception)
+            {
+                // 兜底句只用于「原版格式化已经不可用」的情形；这里再失败也不能让 Refresh 抛出。
+                return "???";
+            }
+        }
+
         private static void FillSentence(ClueCardExtra extra, ClueManager.Clue clue)
         {
             if (extra.Sentence == null)
@@ -551,7 +639,7 @@ namespace ClueDetail.Features.Client.ClueCard
                 return;
             }
 
-            extra.Sentence.text = Util.FormatProposition(clue) ?? string.Empty;
+            extra.Sentence.text = FormatPropositionSafely(clue);
 
             // 照旧版 ClueText 节点（350x100 @ -25.3）的 TMP 设置：m_fontSize=16、
             // m_enableAutoSizing=1（min 5 / max 16）、m_lineSpacing=45、
