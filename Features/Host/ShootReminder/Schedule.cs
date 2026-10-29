@@ -1,4 +1,5 @@
-﻿using System;
+﻿#if TIMELINE   // 回放提醒的一部分；0.1.21 删除回放系统后不参与编译
+using System;
 
 namespace ClueDetail.Features.Host.ShootReminder
 {
@@ -69,3 +70,4 @@ namespace ClueDetail.Features.Host.ShootReminder
         }
     }
 }
+#endif
