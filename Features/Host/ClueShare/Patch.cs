@@ -2,7 +2,6 @@
 using ClueDetail.Core;
 using HarmonyLib;
 using Protocol;
-using PbMessage = Google.Protobuf.IMessage;
 using ServerGamePlayer = Server.Game.Player;
 using ServerGameRoom = Server.Game.GameRoom;
 using ServerDevice = Server.Game.Device;
@@ -36,31 +35,6 @@ namespace ClueDetail.Features.Host.ClueShare
                 catch (Exception ex)
                 {
                     global::ClueDetail.Core.Log.Exception(ex, "线索互通：调查阶段同步失败。");
-                }
-            }
-        }
-
-        /// <summary>
-        /// 二级：黑 / 黑幕的线索广播（<c>S_ADD_CLUE</c>）时，额外单发给队友。
-        /// </summary>
-        /// <remarks>
-        /// 排除尸体（<c>EClueType.Corpse</c>）与刀架（<c>WArmory</c>），避免平板提示暴露身份。
-        /// </remarks>
-        [HarmonyPatch(typeof(ServerGameRoom), "Broadcast", new[] { typeof(PbMessage), typeof(int) })]
-        internal static class ClueBroadcastShareHook
-        {
-            private static void Prefix(PbMessage packet)
-            {
-                if (!FeatureLoader.Enabled<ClueShareFeature>()) return;
-                if (TierValue < 2) return;
-
-                try
-                {
-                    ShareOne(packet);
-                }
-                catch (Exception ex)
-                {
-                    global::ClueDetail.Core.Log.Exception(ex, "线索互通：广播同步失败。");
                 }
             }
         }
@@ -264,9 +238,8 @@ namespace ClueDetail.Features.Host.ClueShare
                 $"线索互通：调查阶段向 {receiver.Name} 补发队友线索 {message.InfoList.Count} 条。");
         }
 
-        /// <summary>二级：单条线索广播时转给队友。</summary>
         /// <summary>
-        /// 二级：**扫描**（调查阶段真正的"搜索线索"）完成后，把结果同步给队友。
+        /// 调查阶段完成一次设备扫描后，把该设备的线索同步给队友。
         /// </summary>
         /// <remarks>
         /// ⚠️ 2026-10-28 修正：原来挂在 <c>S_ADD_CLUE</c> 广播上，但调查阶段搜索走的是
@@ -379,58 +352,6 @@ namespace ClueDetail.Features.Host.ClueShare
 
             return null;
         }
-        private static void ShareOne(PbMessage packet)
-        {
-            if (!(packet is S_ADD_CLUE add) || add.Info == null)
-            {
-                return;
-            }
-
-            int owner = add.Info.PlayerId;
-            ServerGameRoom room = ServerGameRoom.Instance;
-            if (room == null || room.Players == null)
-            {
-                return;
-            }
-
-            if (IsExcludedDevice(add.DeviceId))
-            {
-                return;
-            }
-
-            ServerGamePlayer black = null;
-            for (int i = 0; i < room.Players.Count; i++)
-            {
-                ServerGamePlayer p = room.Players[i];
-                // ⚠️ EPlayerColor：Dark = 黑幕，Black = 黑（0.1.20 :179355-179359 / :181045）。
-                if (p != null && p.PublicInfo != null && p.Color == EPlayerColor.Black)
-                {
-                    black = p;
-                    break;
-                }
-            }
-
-            ServerGamePlayer mastermind = room.MasterMind;
-            if (black == null || mastermind == null)
-            {
-                return;
-            }
-
-            // 只转发黑 / 黑幕自己产生的那条；其他玩家（含共享出去的）不参与。
-            int blackId = black.PublicInfo != null ? black.PublicInfo.PlayerId : 0;
-            int mmId = mastermind.PublicInfo != null ? mastermind.PublicInfo.PlayerId : 0;
-
-            if (owner == blackId)
-            {
-                mastermind.Session?.Send(add);
-                ClueDetail.Features.Host.GameChat.GameChatFeature.RememberShared(mastermind, add.DeviceId);
-            }
-            else if (owner == mmId)
-            {
-                black.Session?.Send(add);
-                ClueDetail.Features.Host.GameChat.GameChatFeature.RememberShared(black, add.DeviceId);
-            }
-        }
 
         private static bool IsExcluded(ServerDevice device)
         {
@@ -441,26 +362,6 @@ namespace ClueDetail.Features.Host.ClueShare
             }
 
             return device.DeviceData != null && device.DeviceData.WhatType == EWhatType.WArmory;
-        }
-
-        private static bool IsExcludedDevice(int deviceId)
-        {
-            ServerDeviceManager dm = ServerDeviceManager.Instance;
-            if (dm == null || dm.Objects == null)
-            {
-                return true;
-            }
-
-            for (int i = 0; i < dm.Objects.Count; i++)
-            {
-                ServerDevice device = dm.Objects[i];
-                if (device != null && device.ID == deviceId)
-                {
-                    return IsExcluded(device);
-                }
-            }
-
-            return false;
         }
     }
 }
