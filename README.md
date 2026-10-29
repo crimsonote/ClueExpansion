@@ -1,4 +1,4 @@
-﻿# ClueDetail · 线索详情
+﻿# 线索拓展（ClueDetail）
 
 《Deadly Trick》的独立 BepInEx 5 插件。
 
@@ -102,3 +102,23 @@ pwsh -File deploy.ps1          # 复制到游戏（游戏需先退出）
 
 本插件用于单人/好友自定义房间的玩法调整。修改会影响线索所表达的信息量，
 在公开对局中使用前请确认房主与参与者都知情。
+---
+
+## 功能一览（2026-10 现状）
+
+| 段名 | 作用 |
+| --- | --- |
+| `ClueRecordDetail` | 把 0.1.18 删掉的「详细活动」还原回线索句子 |
+| `ClueMergeWindow` | 线索合并窗口可配（0 = 不合并） |
+| `ClueCard` | 线索卡片补回旧版的「活动卡面 + 整句文本」两格 |
+| `ClueRender` | 自采集 / 死者与旁观者全线索 |
+| `GameChat` | `/say` `/clue` `/who` `/help`（黑队 `/say 0`） |
+| `ClueShare` | 调查阶段黑 ↔ 黑幕线索互通（1 = 开局线索，2 = 搜索线索） |
+| `ShadowSabotage` | 隐蔽破坏点（身份 / 时钟污染） |
+| `ClueShootReminder` | 回放拍摄提醒（0.1.21 已删除回放系统，功能空转） |
+| `CorpseMap` / `FlowerCarpet` | 尸体箭头 / 尸体撒花 |
+| `SecondVote` | 黑幕二次投票 |
+| `Log` | 日志总开关 |
+
+> 0.1.21 删除了整个回放时间线系统；回放相关代码用 `#if TIMELINE` 保留，
+> 构建时加 `-p:HasTimeline=true` 可重新启用。
