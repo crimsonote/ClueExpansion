@@ -1,4 +1,4 @@
-﻿# ClueDetail 开发规范
+# ClueDetail 开发规范
 
 《Deadly Trick》的**独立** BepInEx 5 插件，用于还原 0.1.18 从线索里移除的「详细活动」。
 
@@ -325,6 +325,29 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
       `LeadSeconds` / `EffectChoice` / `EveryShot` / `ToAll` / `GuardSeconds`。
     - 隐藏点复刻在 `Core/Timeline/HiddenWindow.cs`（`Pick` 哈希 + `AddOption` 边界），
       与客户端 `TryGetHiddenWindow` 逐字一致；差一个候选占位帧就会泄露。
+21. **任务倒扣（黑方做任务的反噬）**（2026-10-30，待实机）：`Features/Host/MissionBacklash/`，
+    实验性、**默认关闭**。口径：黑（`Black`）与黑幕（`Dark`）完成任务时**不立刻扣**，只记录
+    该任务「本应增加」的逃生进度与倒计时；到每个周期（默认 60 秒 = 1 游戏小时）开始时，
+    按倍率（默认 2）扣掉上一周期记录总量。数值逐字复刻 `ClearMission`（0.1.18 :169591-169613），
+    **注意 `15 / 存活人数` 是整数除法**（:169612）。配置 `[ClueMissionBacklash]`：
+    `PeriodSeconds`（5–600，默认 60）、`Multiplier`（0–5，默认 2）、`PenalizeProgress`、`PenalizeTime`。
+    - 两个挂点：`MissionManager.ClearMission`（internal 类型 ⇒ `AccessTools.TypeByName` +
+      `[HarmonyTargetMethod]`；Prefix 记「进方法前在不在列表」、Postfix 确认「出来没了」才算一次完成）
+      与 `GameRoom.SurvivalTick`（private，每秒对齐周期并结算）；第三个挂点
+      `TimeManager.ResetSurvival`（public，:181784）在每局开局清桶 ——
+      `SurvivalTick` 在非生存阶段**直接 return 且不再重排**（:174300-174303），阶段外没有清理机会，
+      而 `SurviveTime` 每局从 420 重来（:181787），上一局「刚对齐就结束」时旧账会被带进新一局。
+    - 负值防护：进度 `Math.Max(0f, current - amount)`、时间走原版
+      `Math.Clamp(RemainTime + delta, 0f, TotalTime)`（:181705）⇒ 两者都不会扣成负数；
+      另挡 NaN / ±Infinity（配置写脏或反射读出脏值时丢弃该笔，不让整桶变 NaN）。
+    - `MissionManager.CurrentPoint` 是 private setter（:169156），结算走反射
+      `GetSetMethod(true)`；反射目标清单见 `MissionBacklash/MissionBridge.cs` 头部。
+    - 边界：只在 Survive 阶段记账；`AllClear` 之后不再扣；非 Survive 阶段丢弃残账；
+      热关闭时 `OnDisabled` 清空未结算桶（避免下次开启把旧账一起扣）。
+    - ⚠️ 设计取向（用户定义）：只对「黑方全体」生效、白方不受影响；这是给「黑方做任务」的
+      延迟反噬，不是即时暴露。倍率 1 等于只抵消黑方任务本应加的量（净效果 0）。
+    - ⚠️ 时间扣到 0 会触发**原版**生存阶段结束（`:174309` → 无未发现尸体则 `GameOver` 判黑胜，
+      `:174462`）。这不是本模块的行为，但调 `Multiplier` / `PenalizeTime` 时必须知道它能直接把这一局推到结算。
 ### 搁置（等用户决策，2026-10-20）
 
 - **头像与「某人」文本无法同时在纯服务端成立**：`UI_ClueSubItem.FillText`（:86635）
