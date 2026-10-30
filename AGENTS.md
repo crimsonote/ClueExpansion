@@ -326,9 +326,11 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
     - 隐藏点复刻在 `Core/Timeline/HiddenWindow.cs`（`Pick` 哈希 + `AddOption` 边界），
       与客户端 `TryGetHiddenWindow` 逐字一致；差一个候选占位帧就会泄露。
 21. **任务倒扣（黑方做任务的反噬）**（2026-10-30，待实机）：`Features/Host/MissionBacklash/`，
-    实验性、**默认关闭**。口径：黑（`Black`）与黑幕（`Dark`）完成任务时**不立刻扣**，只记录
-    该任务「本应增加」的逃生进度与倒计时；到每个周期（默认 60 秒 = 1 游戏小时）开始时，
-    按倍率（默认 2）扣掉上一周期记录总量。数值逐字复刻 `ClearMission`（0.1.18 :169591-169613），
+    实验性、**默认关闭**。口径：黑（`Black`）与黑幕（`Dark`）完成任务时，**原版那笔加分照常生效**
+    （`ClearMission` 在同一帧把进度与时间加上，本功能不改也不回滚），本模块只额外记账（该任务
+    「本应增加」的逃生进度与倒计时）；到每个周期（默认 60 秒 = 1 游戏小时）开始时，按倍率
+    （默认 2）扣掉上一周期记录总量 —— 玩家看到「进度条先涨、到整点再跌」，默认倍率下
+    **净 −1 倍**（原版 +1、周期末 −2）。数值逐字复刻 `ClearMission`（0.1.18 :169591-169613），
     **注意 `15 / 存活人数` 是整数除法**（:169612）。配置 `[ClueMissionBacklash]`：
     `PeriodSeconds`（5–600，默认 60）、`Multiplier`（0–5，默认 2）、`PenalizeProgress`、`PenalizeTime`。
     - 两个挂点：`MissionManager.ClearMission`（internal 类型 ⇒ `AccessTools.TypeByName` +

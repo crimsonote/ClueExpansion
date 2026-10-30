@@ -16,7 +16,8 @@ namespace ClueDetail.Features.Host.MissionBacklash
     {
         /// <summary>
         /// 拦截 <c>MissionManager.ClearMission</c>（0.1.18 :169575）：
-        /// 只有「黑方完成 + 任务真的被清掉」才记账。
+        /// **原方法照常执行** —— 进度与时间的加分就在原方法体内（:169600 / :169613），
+        /// 本钩子不拦、不改；只在「黑方完成 + 任务真的被清掉」时追加一笔账。
         /// </summary>
         /// <remarks>
         /// <c>MissionManager</c> 在发行程序集里是 internal（:169148），不能用 <c>typeof</c>，

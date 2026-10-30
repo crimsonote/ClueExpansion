@@ -75,6 +75,11 @@ namespace ClueDetail.Features.Host.MissionBacklash
         /// 记录一个由黑方 / 黑幕完成的任务所「本应增加」的进度与时间。
         /// 由 <c>ClearMission</c> 的 Postfix 在确认任务真的被清掉之后调用。
         /// </summary>
+        /// <remarks>
+        /// ⚠️ 这里**只是记账**：原版在 <c>ClearMission</c> 方法体里已经把进度与时间加过了
+        /// （:169600 / :169613），本方法不改也不回滚那两笔；真正的扣减只在周期边界由
+        /// <see cref="Settle"/> 执行。
+        /// </remarks>
         internal static void Record(object manager, ESchoolMission mission)
         {
             if (manager == null)
