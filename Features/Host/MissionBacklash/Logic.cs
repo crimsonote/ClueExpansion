@@ -55,20 +55,28 @@ namespace ClueDetail.Features.Host.MissionBacklash
 
             long now = time.SurviveTime;
 
-            // 首次进入生存阶段、或新一局把 SurviveTime 重置回 420 时重新对齐。
-            if (BucketStart < 0 || now < BucketStart)
+            // 只在**游戏时钟整点**结算（1 小时 = 60 秒）：7:00 / 8:00 / 9:00……
+            // 早前按「首次 Tick 对齐」实现会带入局偏移（421 ⇒ 8:01、9:01……），已废弃。
+            if (now <= 0 || now % 60 != 0)
             {
-                Reset();
-                BucketStart = now;
                 return;
             }
 
-            int period = PeriodValue;
-            while (now >= BucketStart + period)
+            long hour = now / 60;
+            int every = EveryHoursValue;
+            if (hour % every != 0)
             {
-                Settle(manager);
-                BucketStart += period;
+                return;
             }
+
+            // 同一个整点只结算一次（防止同一秒被重复调用）。
+            if (hour == LastSettledHour)
+            {
+                return;
+            }
+
+            LastSettledHour = hour;
+            Settle(manager);
         }
 
         /// <summary>

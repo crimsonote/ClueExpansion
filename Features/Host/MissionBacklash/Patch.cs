@@ -139,12 +139,11 @@ namespace ClueDetail.Features.Host.MissionBacklash
         /// <remarks>
         /// 为什么必须有这个挂点：<c>SurvivalTick</c> 在非生存阶段**直接 return 且不再重排**
         /// （:174300-174303），所以每秒钩子在阶段结束后就停摆了，没机会在阶段外清桶。
-        /// 而 <c>SurviveTime</c> 每局都从 420 重新开始（:181787），如果上一局恰好在
-        /// 「刚对齐桶起点」就结束（没有跨过任何结算点），新一局的 <c>now == BucketStart</c>
-        /// 不满足 <c>now &lt; BucketStart</c>，旧账就会被带进新一局。
+        /// 而 <c>SurviveTime</c> 每局都从 420 重新开始（:181787），不清的话，上一局尚未到整点
+        /// 结算的记录会被带进新一局的下一个整点。
         /// <para>
-        /// <c>ResetSurvival</c> 是开局与回大厅都会走的公共收口，在这里清一次最稳；
-        /// <see cref="Tick"/> 里的 <c>now &lt; BucketStart</c> 仍保留，作为挂点失效时的兜底。
+        /// <c>ResetSurvival</c> 是开局与回大厅都会走的公共收口，在这里清一次最稳：
+        /// 同时清掉未结算的累计量和「已结算到哪个整点」的标记。
         /// </para>
         /// </remarks>
         [HarmonyPatch(typeof(ServerTimeManager), nameof(ServerTimeManager.ResetSurvival))]

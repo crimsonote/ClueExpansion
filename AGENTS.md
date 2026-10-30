@@ -328,17 +328,20 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 21. **任务倒扣（黑方做任务的反噬）**（2026-10-30，待实机）：`Features/Host/MissionBacklash/`，
     实验性、**默认关闭**。口径：黑（`Black`）与黑幕（`Dark`）完成任务时，**原版那笔加分照常生效**
     （`ClearMission` 在同一帧把进度与时间加上，本功能不改也不回滚），本模块只额外记账（该任务
-    「本应增加」的逃生进度与倒计时）；到每个周期（默认 60 秒 = 1 游戏小时）开始时，按倍率
-    （默认 2）扣掉上一周期记录总量 —— 玩家看到「进度条先涨、到整点再跌」，默认倍率下
+    「本应增加」的逃生进度与倒计时）；到每个**游戏整点**（每 `EveryHours` 个游戏小时，默认每 1 小时）
+    开始，按倍率（默认 2）扣掉上一小时记录总量 —— 玩家看到「进度条先涨、到整点再跌」，默认倍率下
     **净 −1 倍**（原版 +1、周期末 −2）。数值逐字复刻 `ClearMission`（0.1.18 :169591-169613），
     **注意 `15 / 存活人数` 是整数除法**（:169612）。配置 `[ClueMissionBacklash]`：
-    `PeriodSeconds`（5–600，默认 60）、`Multiplier`（0–5，默认 2）、`PenalizeProgress`、`PenalizeTime`。
+    `EveryHours`（1–12，默认 1）、`Multiplier`（0–5，默认 2）、`PenalizeProgress`、`PenalizeTime`。
+    ⚠️ **结算点必须固定在整点**（`SurviveTime % 60 == 0`），不能用「首次 Tick 对齐」——
+    那种做法把「功能开始计时的那一秒」当成桶起点，偏移量就等于那一秒，且局中热开时随机
+    （2026-10-30 用户反馈偏移到 9 分，旧实现正是此因）。
     - 两个挂点：`MissionManager.ClearMission`（internal 类型 ⇒ `AccessTools.TypeByName` +
       `[HarmonyTargetMethod]`；Prefix 记「进方法前在不在列表」、Postfix 确认「出来没了」才算一次完成）
-      与 `GameRoom.SurvivalTick`（private，每秒对齐周期并结算）；第三个挂点
+      与 `GameRoom.SurvivalTick`（private，每秒检查是否到整点）；第三个挂点
       `TimeManager.ResetSurvival`（public，:181784）在每局开局清桶 ——
       `SurvivalTick` 在非生存阶段**直接 return 且不再重排**（:174300-174303），阶段外没有清理机会，
-      而 `SurviveTime` 每局从 420 重来（:181787），上一局「刚对齐就结束」时旧账会被带进新一局。
+      而 `SurviveTime` 每局从 420 重来（:181787），不清的话上一局未到整点的记录会被带进新一局。
     - 负值防护：进度 `Math.Max(0f, current - amount)`、时间走原版
       `Math.Clamp(RemainTime + delta, 0f, TotalTime)`（:181705）⇒ 两者都不会扣成负数；
       另挡 NaN / ±Infinity（配置写脏或反射读出脏值时丢弃该笔，不让整桶变 NaN）。

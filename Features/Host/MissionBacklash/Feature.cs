@@ -14,8 +14,8 @@ namespace ClueDetail.Features.Host.MissionBacklash
     /// <b>原版那笔加分照常发生</b> —— <c>ClearMission</c> 会在同一帧把进度与时间加上
     /// （:169600 / :169613），本功能**不拦、也不回滚**它；本模块只额外记一笔账：
     /// 该任务「本应增加」的逃生进度与倒计时长。</item>
-    /// <item>在每个周期（默认 1 游戏小时 = 60 秒生存时间）的<b>开始</b>结算上一周期的记录，
-    /// 从全队进度与倒计时里扣掉 <c>记录总量 × 倍率</c>（倍率默认 2）。</item>
+    /// <item>在每个<b>游戏整点</b>结算上一小时的记录，从全队进度与倒计时里扣掉
+    /// <c>记录总量 × 倍率</c>（倍率默认 2）。</item>
     /// </list>
     /// </para>
     /// <para>
@@ -28,22 +28,27 @@ namespace ClueDetail.Features.Host.MissionBacklash
     /// 白方完成任务不受影响。
     /// </para>
     /// <para>
-    /// 计时基准是 <c>TimeManager.SurviveTime</c>（0.1.18 :181666，每秒 +1，每局从 420 起算），
-    /// 周期从「本局第一次进入生存阶段」开始对齐，默认 60 秒正好等于游戏内 1 小时。
+    /// 计时基准是**游戏时钟** <c>TimeManager.SurviveTime</c>（0.1.18 :181666，每秒 +1，
+    /// 每局从 420 = 7:00 起算；<c>SurviveHour = SurviveTime / 60</c> 即游戏内小时）。
+    /// 结算点固定为 <c>SurviveTime % 60 == 0</c> 的整点，每 <c>EveryHours</c> 个整点结算一次 ——
+    /// 与「谁在第几秒进局」「黑方第几秒完成任务」都无关，**不会带进局偏移**
+    /// （早前按「首次 Tick 对齐」实现，会永远偏 1 秒或更多，已改掉）。
     /// </para>
     /// </remarks>
     [PatchFeature(
         "ClueMissionBacklash",
         "实验性：黑与黑幕完成任务时，原版照常给该任务加进度与时间（本功能不改）；本模块只额外记账，\n" +
-        "之后每个周期（默认 1 游戏小时 = 60 秒）开始时，扣掉上一周期记录总量 × 倍率（默认 2 倍）的进度与时间。\n" +
-        "所以玩家看到的是「进度条先涨、到整点再跌」，默认倍率下的净效果为 −1 倍（原版 +1，周期末 −2）。\n" +
-        "周期、倍率、是否扣进度 / 扣时间都可调；段开关可热关，关闭时不清空已生效的游戏状态。",
+        "之后在每个游戏整点（每 N 个游戏小时，1 小时 = 60 秒，默认每 1 小时）结算上一小时的记录，\n" +
+        "按倍率（默认 2 倍）扣掉记录总量。所以玩家看到的是「进度条先涨、到整点再跌」，\n" +
+        "默认倍率下的净效果为 −1 倍（原版 +1，周期末 −2）。\n" +
+        "结算点永远落在游戏时钟整点，不受进局时刻或任务完成时刻影响。\n" +
+        "小时数、倍率、是否扣进度 / 扣时间都可调；段开关可热关，关闭时不清空已生效的游戏状态。",
         defaultEnabled: false,
         side: FeatureSide.Host)]
     internal partial class MissionBacklashFeature
     {
-        /// <summary>结算周期（游戏秒）。默认 60 = 游戏内 1 小时（<c>SurviveTime / 60</c>）。</summary>
-        public static ConfigEntry<int> PeriodSeconds { get; private set; }
+        /// <summary>每几个游戏小时结算一次。默认 1 = 每个整点。</summary>
+        public static ConfigEntry<int> EveryHours { get; private set; }
 
         /// <summary>结算倍率。默认 2 = 扣掉记录量的两倍。</summary>
         public static ConfigEntry<float> Multiplier { get; private set; }
@@ -56,8 +61,8 @@ namespace ClueDetail.Features.Host.MissionBacklash
 
         // ── 运行期状态（全部在 Unity 主线程读写） ──
 
-        /// <summary>当前结算周期的起始 tick；<c>-1</c> 表示尚未对齐（等待进入生存阶段）。</summary>
-        internal static long BucketStart = -1;
+        /// <summary>已结算的最后一个整点（<c>SurviveTime / 60</c>）；<c>-1</c> 表示本局还没结算过。</summary>
+        internal static long LastSettledHour = -1;
 
         /// <summary>本周期内黑方完成任务累计的「应加进度」（未乘倍率）。</summary>
         internal static double PendingProgress;
@@ -65,27 +70,28 @@ namespace ClueDetail.Features.Host.MissionBacklash
         /// <summary>本周期内黑方完成任务累计的「应加秒数」（未乘倍率）。</summary>
         internal static double PendingSeconds;
 
-        /// <summary>周期下限，防止误填 0 / 负数导致每秒结算。</summary>
-        internal const int MinPeriodSeconds = 5;
+        /// <summary>小时数下限（1 = 每个整点）。</summary>
+        internal const int MinHours = 1;
 
-        /// <summary>周期上限（一局最长也只有几分钟，600 秒足够）。</summary>
-        internal const int MaxPeriodSeconds = 600;
+        /// <summary>小时数上限（一局最长也只有几分钟，12 小时足够宽）。</summary>
+        internal const int MaxHours = 12;
 
         public static void Bind(ConfigFile config, string section)
         {
-            PeriodSeconds = config.Bind(
+            EveryHours = config.Bind(
                 section,
-                "PeriodSeconds",
-                60,
-                "结算周期（游戏秒）。默认 60 = 游戏内 1 小时（原版 SurviveHour = SurviveTime / 60）。\n" +
-                "每个周期开始时，结算上一周期黑方完成任务所记录的进度与时间。\n" +
-                "允许 5–600；超出范围按边界处理。");
+                "EveryHours",
+                1,
+                "每几个游戏小时结算一次。默认 1 = 每个整点（1 小时 = 60 秒，即 SurviveTime % 60 == 0）。\n" +
+                "结算点永远落在游戏时钟的整点（7:00、8:00、9:00……），\n" +
+                "不会因为进局时刻或任务完成时刻产生偏移。\n" +
+                "允许 1–12；超出范围按边界处理。");
 
             Multiplier = config.Bind(
                 section,
                 "Multiplier",
                 2f,
-                "结算倍率。默认 2 = 扣掉上一周期记录总量的两倍。\n" +
+                "结算倍率。默认 2 = 扣掉上一小时记录总量的两倍。\n" +
                 "1 = 只抵消黑方任务本应加的量（净效果为 0）；0.5 = 只扣一半。\n" +
                 "允许 0–5；超出范围按边界处理。");
 
@@ -106,7 +112,7 @@ namespace ClueDetail.Features.Host.MissionBacklash
                 "这是原版结算，不是本模块加的。");
         }
 
-        /// <summary>启动时清零（真正的按局重置在每次进入生存阶段时做）。</summary>
+        /// <summary>启动时清零（真正的按局重置在每次 ResetSurvival 时做）。</summary>
         public static void OnLoaded()
         {
             Reset();
@@ -120,23 +126,23 @@ namespace ClueDetail.Features.Host.MissionBacklash
 
         internal static void Reset()
         {
-            BucketStart = -1;
+            LastSettledHour = -1;
             PendingProgress = 0d;
             PendingSeconds = 0d;
         }
 
-        /// <summary>实际生效的周期（读配置并夹到 [Min, Max]）。</summary>
-        internal static int PeriodValue
+        /// <summary>实际生效的小时数（读配置并夹到 [Min, Max]）。</summary>
+        internal static int EveryHoursValue
         {
             get
             {
-                int value = PeriodSeconds != null ? PeriodSeconds.Value : 60;
-                if (value < MinPeriodSeconds)
+                int value = EveryHours != null ? EveryHours.Value : 1;
+                if (value < MinHours)
                 {
-                    return MinPeriodSeconds;
+                    return MinHours;
                 }
 
-                return value > MaxPeriodSeconds ? MaxPeriodSeconds : value;
+                return value > MaxHours ? MaxHours : value;
             }
         }
 
