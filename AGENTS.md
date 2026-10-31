@@ -372,6 +372,18 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
     - ⚠️ 副作用：显形时黑方客户端会把他显示为可攻击目标（`GetTargetPlayer` 只看 `Hide`），
       但服务端 `UseWeapon` 有 `!IsAlive → "target dead"` 拒绝；`Collider` 会从 trigger 变实体。
     - ⚠️ 审判/投票阶段强制真身：`State != Survive` 时清空伪装集合并恢复。
+23. **花瓣场景（彩蛋补丁）**（2026-10-31，待实机）：`Features/Host/FlowerScene/`，实验性、**默认关闭**。
+    - 整图按 `PetalDensity`（每万平方单位，默认 2.0）铺花瓣（1021–1024）。
+    - 全图特殊物品总数 `TotalSpecialItems`（默认 24）：按落点房间类型选物品 —— 花园（`Park`）出鱼
+      （1059/1060），其他房间出铃铛 3009 / 气喇叭 3008 / 玩具锤 3007 / 罐头 3001–3005 /
+      奖杯 1062–1064；**金鱼 1061 全局唯一**，优先放花园。
+    - 矿山（`Mine`/`MineEdge`）按 `OreDensity`（默认 1.5）放随机矿石（1032–1034），**不占**特殊物品名额。
+    - 位置判定：`ValidPosition`（`MapArray` 可通行）+ 实体碰撞避障（同 FlowerCarpet）+ `MinGap`（默认 200）。
+    - 生成：自己构造 `S_SPAWN_DEVICE`（同 FlowerCarpet，避开 `DropItemSfx` 音效叠加）；
+      `OnDisabled` 用 `S_REMOVE_DEVICE` + 从 `area.Info.DeviceInfos` / `ItemManager.Items` 移除。
+    - 挂点：`TimeManager.ResetSurvival`（每局复位标记）、`GameRoom.SurvivalTick`（进入 Survive 后铺一次）。
+    - ⚠️ 物品 1059–1064 不在 `data/ItemData.txt` 里，但钓鱼系统确实会产出
+      （`Fishing.HandleEvent` :168554-168565，`CreateAndInsertInven`）—— **不要拿 ItemData 表判断"物品不存在"**。
 ### 搁置（等用户决策，2026-10-20）
 
 - **头像与「某人」文本无法同时在纯服务端成立**：`UI_ClueSubItem.FillText`（:86635）
