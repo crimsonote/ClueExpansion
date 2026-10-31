@@ -353,6 +353,24 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
       延迟反噬，不是即时暴露。倍率 1 等于只抵消黑方任务本应加的量（净效果 0）。
     - ⚠️ 时间扣到 0 会触发**原版**生存阶段结束（`:174309` → 无未发现尸体则 `GameOver` 判黑胜，
       `:174462`）。这不是本模块的行为，但调 `Multiplier` / `PenalizeTime` 时必须知道它能直接把这一局推到结算。
+22. **鬼魂临场感（彩蛋补丁）**（2026-10-31，待实机）：`Features/Host/GhostPresence/`，
+    实验性、**默认关闭**。三个独立子开关：`Disguise`（铃铛伪装）、`Reveal`（真鬼显形）、
+    `Requiem`（安魂曲）。
+    - **铃铛伪装**：生者手持铃铛（`DataId=3009`，配置 `BellItemId`）时，在**其他人**视野里显示为幽灵；
+      本人视角不变。只在 Survive 生效，丢铃铛/换手/进调查审判立即恢复真身。
+    - **真鬼显形**：每 20–35 秒（`RevealIntervalMin/Max`）在所有人（含调查阶段）视野显形
+      2–4 秒（`RevealDurationMin/Max`），**不改生死**。
+    - **安魂曲**：显形期间全场按 `RequiemGap`（默认 1.1 秒）播 `HandBellSfx`
+      （`BroadcastWorldSFX`，距离 99999 绕过距离过滤）。
+    - 实现口径：服务端真值不动（`IsAlive` / `PublicInfo.IsGhost` / `State` 按原版），只对观察者发
+      `S_DESPAWN` + `S_SPAWN`，在**副本**上改 `IsGhost`。三个挂点：`SurvivalTick`（每秒扫描/调度）、
+      `ChangeGameState`（离开 Survive 清伪装）、`HostPeerSession.Send`（AOI 的 `S_ADD_PLAYER`
+      之后补发一帧 `S_SPAWN(IsGhost=true)`，否则缓存重建会露出真身）。
+    - 显形靠撤 `State=Hide`：客户端 `HidePlayer(false)` 恢复不透明、AOI 重新纳入；
+      结束改回 `Hide`，`StartState(Hide)` 会自动清空 `SharedPlayers`。
+    - ⚠️ 副作用：显形时黑方客户端会把他显示为可攻击目标（`GetTargetPlayer` 只看 `Hide`），
+      但服务端 `UseWeapon` 有 `!IsAlive → "target dead"` 拒绝；`Collider` 会从 trigger 变实体。
+    - ⚠️ 审判/投票阶段强制真身：`State != Survive` 时清空伪装集合并恢复。
 ### 搁置（等用户决策，2026-10-20）
 
 - **头像与「某人」文本无法同时在纯服务端成立**：`UI_ClueSubItem.FillText`（:86635）
