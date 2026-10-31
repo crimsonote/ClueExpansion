@@ -5,7 +5,6 @@ using Protocol;
 using ServerGamePacketSink = DummyClient.IPacketSink;
 using ServerGameRoom = Server.Game.GameRoom;
 using ServerGamePlayer = Server.Game.Player;
-using ServerTimeManager = Server.Game.TimeManager;
 
 namespace ClueDetail.Features.Host.GhostPresence
 {
@@ -21,6 +20,10 @@ namespace ClueDetail.Features.Host.GhostPresence
     /// <item>客户端 <c>Spawn(PublicPlayerInfo)</c>（0.1.18 :32370）复用 <c>_cache</c> 里的对象，
     /// 名字不会丢；<c>Despawn</c>（:32381）只 SetActive(false)，不销毁缓存。</item>
     /// </list>
+    /// <para>
+    /// 节拍基准用 <c>Time.realtimeSinceStartup</c>：<c>SurviveTime</c> 是整数秒，
+    /// 表达不了 0.7 秒级的安魂曲节奏。
+    /// </para>
     /// </remarks>
     internal partial class GhostPresenceFeature
     {
@@ -33,29 +36,26 @@ namespace ClueDetail.Features.Host.GhostPresence
                 return;
             }
 
-            ServerTimeManager time = ServerTimeManager.Instance;
-            if (time == null)
-            {
-                return;
-            }
-
-            long now = time.SurviveTime;
             EGameState state = room.State;
 
-            // ── 铃铛伪装：只在生存阶段 ──
-            if (state != EGameState.Survive)
+            // ── 铃铛伪装：只在生存阶段；子开关关掉时也要把已发出去的恢复掉 ──
+            if (state != EGameState.Survive || !DisguiseOn)
             {
                 ClearDisguises(room);
             }
-            else if (DisguiseOn)
+            else
             {
                 ScanDisguises(room);
             }
 
-            // ── 真鬼显形：生存与调查阶段 ──
-            if (RevealOn && (state == EGameState.Survive || state == EGameState.Detective))
+            // ── 真鬼显形：生存与调查阶段；子开关关掉时恢复 Hide ──
+            if (!RevealOn)
             {
-                TickReveals(room, now);
+                ClearReveals(room);
+            }
+            else if (state == EGameState.Survive || state == EGameState.Detective)
+            {
+                TickReveals(room, UnityEngine.Time.realtimeSinceStartup);
             }
         }
 
@@ -72,6 +72,19 @@ namespace ClueDetail.Features.Host.GhostPresence
             {
                 ClearDisguises(room);
             }
+        }
+
+        /// <summary>热关闭时把已经发出去的状态全部收回。</summary>
+        internal static void RestoreAll()
+        {
+            ServerGameRoom room = ServerGameRoom.Instance;
+            if (room == null)
+            {
+                return;
+            }
+
+            ClearDisguises(room);
+            ClearReveals(room);
         }
 
         // ══════════════════ 铃铛伪装 ══════════════════
@@ -138,7 +151,7 @@ namespace ClueDetail.Features.Host.GhostPresence
 
         // ══════════════════ 真鬼间歇显形 ══════════════════
 
-        private static void TickReveals(ServerGameRoom room, long now)
+        private static void TickReveals(ServerGameRoom room, float now)
         {
             List<ServerGamePlayer> dead = room.DeadPlayers;
             if (dead == null)
@@ -156,9 +169,9 @@ namespace ClueDetail.Features.Host.GhostPresence
 
                 int id = ghost.PublicInfo.PlayerId;
 
-                if (!RevealUntil.TryGetValue(id, out long until))
+                if (!RevealUntil.TryGetValue(id, out float until))
                 {
-                    if (!NextRevealAt.TryGetValue(id, out long next))
+                    if (!NextRevealAt.TryGetValue(id, out float next))
                     {
                         NextRevealAt[id] = now + RandRange(
                             RevealIntervalMin != null ? RevealIntervalMin.Value : 20,
@@ -171,7 +184,7 @@ namespace ClueDetail.Features.Host.GhostPresence
                         continue;
                     }
 
-                    long duration = RandRange(
+                    int duration = RandRange(
                         RevealDurationMin != null ? RevealDurationMin.Value : 2,
                         RevealDurationMax != null ? RevealDurationMax.Value : 4);
                     RevealUntil[id] = now + duration;
@@ -184,6 +197,7 @@ namespace ClueDetail.Features.Host.GhostPresence
                     ghost.State = EPlayerState.Idle;
                     BroadcastRespawn(room, ghost, true);
                     NextBellAt[id] = now;
+                    RequiemBeat[id] = 0;
                     global::ClueDetail.Core.Log.Info($"鬼魂彩蛋：{ghost.Name} 显形 {duration} 秒。");
                     continue;
                 }
@@ -192,6 +206,7 @@ namespace ClueDetail.Features.Host.GhostPresence
                 {
                     RevealUntil.Remove(id);
                     NextBellAt.Remove(id);
+                    RequiemBeat.Remove(id);
 
                     // 恢复 Hide：StartState(Hide) 会清空 SharedPlayers 并锁技能。
                     ghost.State = EPlayerState.Hide;
@@ -200,11 +215,40 @@ namespace ClueDetail.Features.Host.GhostPresence
                     continue;
                 }
 
-                if (RequiemOn && (!NextBellAt.TryGetValue(id, out long bellAt) || now >= bellAt))
+                if (RequiemOn && (!NextBellAt.TryGetValue(id, out float bellAt) || now >= bellAt))
                 {
-                    NextBellAt[id] = now + (long)Math.Max(0.3f, RequiemGapValue);
                     PlayRequiem(room, ghost);
+
+                    int beat = RequiemBeat.TryGetValue(id, out int b) ? b : 0;
+                    beat = (beat + 1) % 3;
+                    RequiemBeat[id] = beat;
+                    NextBellAt[id] = now + (beat == 0 ? RestGap : BeatGap);
                 }
+            }
+        }
+
+        private static void ClearReveals(ServerGameRoom room)
+        {
+            if (RevealUntil.Count == 0)
+            {
+                return;
+            }
+
+            var ids = new List<int>(RevealUntil.Keys);
+            RevealUntil.Clear();
+            NextBellAt.Clear();
+            RequiemBeat.Clear();
+
+            for (int i = 0; i < ids.Count; i++)
+            {
+                ServerGamePlayer ghost = FindPlayer(room.Players, ids[i]);
+                if (ghost == null || ghost.IsAlive)
+                {
+                    continue;
+                }
+
+                ghost.State = EPlayerState.Hide;
+                BroadcastDespawn(room, ghost);
             }
         }
 
@@ -249,8 +293,6 @@ namespace ClueDetail.Features.Host.GhostPresence
                     global::ClueDetail.Core.Log.Exception(ex, "鬼魂彩蛋：重发玩家状态失败。");
                 }
             }
-
-            // 自己那份保持真值（IsGhost=false），不重发。
         }
 
         private static void BroadcastDespawn(ServerGameRoom room, ServerGamePlayer target)
