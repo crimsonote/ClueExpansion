@@ -129,7 +129,14 @@ namespace ClueDetail.Features.Host.FlowerScene
             for (int i = 0; i < SpawnedItems.Count; i++)
             {
                 ServerItem item = SpawnedItems[i];
-                if (item != null)
+                if (item == null)
+                {
+                    continue;
+                }
+
+                // 只清理还躺在地上的：已经被玩家捡走的物品此时在背包/手里，
+                // 从全局 Items 里删掉会让他手里的东西变成幽灵物品。
+                if (item.State == Define.EItemState.Drop)
                 {
                     im?.Items.Remove(item);
                 }
