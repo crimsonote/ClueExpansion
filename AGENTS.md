@@ -364,7 +364,9 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
       播 `HandBellSfx`；`BroadcastWorldSFX` 距离 **1120** = 铃铛正常声音范围（:179295 / :22644），
       超出半径听不到。计时用 `Time.realtimeSinceStartup`（亚秒节奏，`SurviveTime` 是整数秒）。
     - 实现口径：服务端真值不动（`IsAlive` / `PublicInfo.IsGhost` / `State` 按原版），只对观察者发
-      `S_DESPAWN` + `S_SPAWN`，在**副本**上改 `IsGhost`。三个挂点：`SurvivalTick`（每秒扫描/调度）、
+      `S_DESPAWN` + `S_SPAWN`，在**副本**上改 `IsGhost`。四个挂点：`SurvivalTick`（生存阶段每秒扫描/调度）、
+      `DetectiveTick`（⚠️ **调查阶段必须单独挂**：`SurvivalTick` 在非 Survive 直接 return 且不再重排，
+      0.1.18 :174300-174302，不挂的话「进调查清伪装」和「调查阶段真鬼显形」都不会发生）、
       `ChangeGameState`（离开 Survive 清伪装）、`HostPeerSession.Send`（AOI 的 `S_ADD_PLAYER`
       之后补发一帧 `S_SPAWN(IsGhost=true)`，否则缓存重建会露出真身）。
     - 显形靠撤 `State=Hide`：客户端 `HidePlayer(false)` 恢复不透明、AOI 重新纳入；

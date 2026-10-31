@@ -37,6 +37,33 @@ namespace ClueDetail.Features.Host.GhostPresence
             }
         }
 
+        /// <summary>
+        /// 调查阶段每秒维护。⚠️ <c>SurvivalTick</c> 在非生存阶段**直接 return 且不再重排**
+        /// （0.1.18 :174300-174302），所以调查阶段它根本不会执行 —— 必须在 <c>DetectiveTick</c>
+        /// 上再挂一个，否则「进调查就清伪装」和「调查阶段真鬼显形」全都不会发生。
+        /// </summary>
+        [HarmonyPatch(typeof(ServerGameRoom), "DetectiveTick")]
+        internal static class DetectiveTickHook
+        {
+            [HarmonyPostfix]
+            private static void Postfix()
+            {
+                if (!FeatureLoader.Enabled<GhostPresenceFeature>())
+                {
+                    return;
+                }
+
+                try
+                {
+                    Tick();
+                }
+                catch (Exception ex)
+                {
+                    global::ClueDetail.Core.Log.Exception(ex, "鬼魂彩蛋：调查阶段维护失败。");
+                }
+            }
+        }
+
         /// <summary>阶段切换：离开生存阶段立即撤掉所有铃铛伪装。</summary>
         /// <remarks>
         /// <c>ChangeGameState</c> 有两个重载（public 单参 / private 双参），必须写参数类型，
