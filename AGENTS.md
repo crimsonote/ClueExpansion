@@ -369,6 +369,11 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
       也要检查收件人在集合内。配置 `BellRespectAoi`（默认 true），false 才退回旧的全房间实验行为。
     - **真鬼显形**：每 20–35 秒（`RevealIntervalMin/Max`）在所有人（含调查阶段）视野显形
       2–4 秒（`RevealDurationMin/Max`），**不改生死**。
+      ⚠️ 显形/隐藏必须走原版 `Player.AddPlayer` / `RemovePlayer`，**不能只发 S_SPAWN**：
+      移动包 `Player.Move`（:178959）只经 `BroadcastToPlayerAndObservers`（:180103）发给
+      `SharedPlayers`，不发这个集合的话活人看到的永远是显形瞬间的静止位置。
+      注意 `ghost.State = Hide` 时 `StartState(Hide)` 自己会清空 `SharedPlayers` 并 despawn，
+      所以「先改 State、再 RemovePlayer」的顺序是安全的（集合已空时 RemovePlayer 直接返回 false）。
     - **安魂曲**：显形期间以幽灵位置为中心、按三拍一组（`RequiemBeatGap` 0.7 / `RequiemRestGap` 2.4）
       播 `HandBellSfx`；`BroadcastWorldSFX` 距离 **1120** = 铃铛正常声音范围（:179295 / :22644），
       超出半径听不到。计时用 `Time.realtimeSinceStartup`（亚秒节奏，`SurviveTime` 是整数秒）。

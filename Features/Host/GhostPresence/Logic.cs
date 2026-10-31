@@ -377,7 +377,18 @@ namespace ClueDetail.Features.Host.GhostPresence
 
                 try
                 {
-                    SendSpawn(observer, target, asGhost);
+                    if (!target.IsAlive)
+                    {
+                        // 真鬼：必须走原版 AddPlayer —— 它除了发 S_SPAWN，还会把观察者加进
+                        // ghost.SharedPlayers，之后 Player.Move 的 S_MOVE 才会经
+                        // BroadcastToPlayerAndObservers（:180103）同步给活人。
+                        // 只发 S_SPAWN 的话，活人看到的是显形瞬间的静止位置。
+                        target.AddPlayer(observer);
+                    }
+                    else
+                    {
+                        SendSpawn(observer, target, asGhost);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -432,7 +443,15 @@ namespace ClueDetail.Features.Host.GhostPresence
 
                 try
                 {
-                    observer.Session.Send(new S_DESPAWN { PlayerId = target.PublicInfo.PlayerId });
+                    if (!target.IsAlive)
+                    {
+                        // 真鬼：RemovePlayer 同时清 SharedPlayers 并给观察者发 S_DESPAWN。
+                        target.RemovePlayer(observer);
+                    }
+                    else
+                    {
+                        observer.Session.Send(new S_DESPAWN { PlayerId = target.PublicInfo.PlayerId });
+                    }
                 }
                 catch (Exception ex)
                 {
