@@ -360,8 +360,9 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
       本人视角不变。只在 Survive 生效，丢铃铛/换手/进调查审判立即恢复真身。
     - **真鬼显形**：每 20–35 秒（`RevealIntervalMin/Max`）在所有人（含调查阶段）视野显形
       2–4 秒（`RevealDurationMin/Max`），**不改生死**。
-    - **安魂曲**：显形期间全场按 `RequiemGap`（默认 1.1 秒）播 `HandBellSfx`
-      （`BroadcastWorldSFX`，距离 99999 绕过距离过滤）。
+    - **安魂曲**：显形期间以幽灵位置为中心、按三拍一组（`RequiemBeatGap` 0.7 / `RequiemRestGap` 2.4）
+      播 `HandBellSfx`；`BroadcastWorldSFX` 距离 **1120** = 铃铛正常声音范围（:179295 / :22644），
+      超出半径听不到。计时用 `Time.realtimeSinceStartup`（亚秒节奏，`SurviveTime` 是整数秒）。
     - 实现口径：服务端真值不动（`IsAlive` / `PublicInfo.IsGhost` / `State` 按原版），只对观察者发
       `S_DESPAWN` + `S_SPAWN`，在**副本**上改 `IsGhost`。三个挂点：`SurvivalTick`（每秒扫描/调度）、
       `ChangeGameState`（离开 Survive 清伪装）、`HostPeerSession.Send`（AOI 的 `S_ADD_PLAYER`

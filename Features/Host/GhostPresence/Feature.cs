@@ -15,7 +15,8 @@ namespace ClueDetail.Features.Host.GhostPresence
     /// 本人视角不变。只在生存阶段生效，丢铃铛 / 换手 / 进入调查与审判立即解除。</item>
     /// <item><b>真鬼间歇显形</b>：已死的幽灵每隔一段随机时间，在所有人（含调查阶段）视野里
     /// 出现 2–4 秒再消失。**不改变生死**，只切 <c>State</c> 与可见性。</item>
-    /// <item><b>安魂曲</b>：真鬼显形期间，全场按三拍一组的节奏听到 <c>HandBellSfx</c>（所有人可闻）。</item>
+    /// <item><b>安魂曲</b>：真鬼显形期间，以幽灵位置为中心按三拍一组的节奏听到 <c>HandBellSfx</c>
+    /// （范围与铃铛正常声音一致，1120，超出听不到）。</item>
     /// </list>
     /// </para>
     /// <para>
@@ -35,7 +36,8 @@ namespace ClueDetail.Features.Host.GhostPresence
         "ClueGhostPresence",
         "彩蛋：鬼魂临场感。① 生者手持铃铛时在别人视野中显示为幽灵（本人视角正常，丢铃铛即解除，仅生存阶段）；" +
         "② 真鬼每隔一段时间在所有人视野中显形若干秒（含调查阶段，不改生死）；" +
-        "③ 显形期间全场按三拍一组的节奏响起铃铛安魂曲。三个子项独立开关，节奏/频率全部可调。",
+        "③ 显形期间以幽灵为中心、按三拍一组的节奏响起铃铛安魂曲（范围同铃铛正常声音）。" +
+        "三个子项独立开关，节奏/频率全部可调。",
         defaultEnabled: false,
         side: FeatureSide.Host)]
     internal partial class GhostPresenceFeature
@@ -107,7 +109,8 @@ namespace ClueDetail.Features.Host.GhostPresence
                 section,
                 "Requiem",
                 true,
-                "安魂曲：真鬼显形期间，全场按三拍一组的节奏听到铃铛声（所有人可闻）。\n" +
+                "安魂曲：真鬼显形期间，以幽灵位置为中心按三拍一组的节奏听到铃铛声。\n" +
+                "范围与铃铛正常声音一致（1120），超出半径的人听不到。\n" +
                 "嫌吵可以关掉，不影响显形本身。");
 
             BellItemId = config.Bind(

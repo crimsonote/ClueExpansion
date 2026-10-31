@@ -256,8 +256,10 @@ namespace ClueDetail.Features.Host.GhostPresence
         {
             try
             {
-                // 所有人可闻：距离给到极大值，绕过原版的距离过滤。
-                room.BroadcastWorldSFX(ESoundType.HandBellSfx, ghost.PublicInfo.Pos, 99999f);
+                // 与铃铛正常声音范围一致：1120（0.1.18 :179295 的 BroadcastWorldSFX、
+                // :22644 的 Managers.Sound.PlayWorld 用的都是这个距离）。以幽灵位置为中心，
+                // 超出半径的人听不到 —— 不再是全图可闻。
+                room.BroadcastWorldSFX(ESoundType.HandBellSfx, ghost.PublicInfo.Pos, 1120f);
             }
             catch (Exception ex)
             {
