@@ -38,6 +38,10 @@ namespace ClueDetail.Features.Host.GhostPresence
 
             EGameState state = room.State;
 
+            // 死亡的人不可能是伪装者：必须先从集合里剔掉，否则阶段切换时
+            // ClearDisguises 会对他发 S_SPAWN(IsGhost=false)，回放里就会「死而复生」。
+            PruneDeadDisguises(room);
+
             // ── 铃铛伪装：只在生存阶段；子开关关掉时也要把已发出去的恢复掉 ──
             if (state != EGameState.Survive || !DisguiseOn)
             {
@@ -150,10 +154,51 @@ namespace ClueDetail.Features.Host.GhostPresence
             for (int i = 0; i < ids.Length; i++)
             {
                 ServerGamePlayer target = FindPlayer(players, ids[i]);
-                if (target != null)
+                if (target != null && target.IsAlive)
                 {
+                    // ⚠️ 只对活人恢复真身：死者已经由 EnterGhostVisibility 发过 S_DESPAWN，
+                    // 再发 S_SPAWN(IsGhost=false) 会让回放把他按活人重新生成（死而复生）。
                     BroadcastRespawn(room, target, false);
                 }
+            }
+        }
+
+        /// <summary>把集合里已经死亡的人剔掉（不发任何包）。</summary>
+        private static void PruneDeadDisguises(ServerGameRoom room)
+        {
+            if (Disguised.Count == 0)
+            {
+                return;
+            }
+
+            List<ServerGamePlayer> alive = room.AlivePlayers;
+            var deadIds = new List<int>();
+
+            foreach (int id in Disguised)
+            {
+                bool stillAlive = false;
+                if (alive != null)
+                {
+                    for (int i = 0; i < alive.Count; i++)
+                    {
+                        ServerGamePlayer p = alive[i];
+                        if (p != null && p.PublicInfo != null && p.PublicInfo.PlayerId == id)
+                        {
+                            stillAlive = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!stillAlive)
+                {
+                    deadIds.Add(id);
+                }
+            }
+
+            for (int i = 0; i < deadIds.Count; i++)
+            {
+                Disguised.Remove(deadIds[i]);
             }
         }
 
