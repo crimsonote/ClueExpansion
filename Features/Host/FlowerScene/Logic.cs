@@ -190,7 +190,7 @@ namespace ClueDetail.Features.Host.FlowerScene
                 }
 
                 int petals = (int)(stats.Walkable * Cell * Cell * PetalDensityValue / 10000.0);
-                petals = clampInt(petals, 0, 3000);
+                petals = clampInt(petals, 0, MaxPetalsValue);
 
                 int placedPetal = 0;
                 for (int i = 0; i < petals; i++)
@@ -202,7 +202,8 @@ namespace ClueDetail.Features.Host.FlowerScene
                 }
 
                 global::ClueDetail.Core.Log.Info(
-                    $"花瓣场景：花瓣 {placedPetal}、矿石 {placedOre}、特殊物品 {placedSpecial}（金鱼 {(goldPlaced > 0 ? "已放" : "未放")}）。");
+                    $"花瓣场景：花瓣 {placedPetal}/{petals}（密度 {PetalDensityValue:F2}）、" +
+                    $"矿石 {placedOre}/{ore}、特殊物品 {placedSpecial}/{total}（金鱼 {(goldPlaced > 0 ? "已放" : "未放")}）。");
             }
             catch (global::System.Exception ex)
             {

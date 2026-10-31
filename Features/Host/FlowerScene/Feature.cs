@@ -52,6 +52,9 @@ namespace ClueDetail.Features.Host.FlowerScene
         /// <summary>花瓣之间 / 花瓣与物品之间的最小间距（比物品间小，避免花瓣铺满后把物品挤掉）。</summary>
         public static ConfigEntry<float> PetalGap { get; private set; }
 
+        /// <summary>花瓣数量硬上限（防止配置写大 + 小间距把全图铺满）。</summary>
+        public static ConfigEntry<int> MaxPetals { get; private set; }
+
         public static void Bind(ConfigFile config, string section)
         {
             TotalSpecialItems = config.Bind(
@@ -66,10 +69,10 @@ namespace ClueDetail.Features.Host.FlowerScene
             PetalDensity = config.Bind(
                 section,
                 "PetalDensity",
-                2.0f,
+                0.15f,
                 new ConfigDescription(
                     "花瓣密度：每 10000 平方游戏单位的期望朵数。\n" +
-                    "0 = 不铺花瓣。默认 2.0（比尸体撒花的 0.8 更密）。",
+                    "0 = 不铺花瓣。默认 0.15（全图约 800 朵）；最终还会被 MaxPetals 封顶。",
                     new AcceptableValueRange<float>(0f, 20f)));
 
             OreDensity = config.Bind(
@@ -108,11 +111,20 @@ namespace ClueDetail.Features.Host.FlowerScene
             PetalGap = config.Bind(
                 section,
                 "PetalGap",
-                50f,
+                100f,
                 new ConfigDescription(
                     "花瓣之间以及花瓣与物品之间的最小间距（游戏单位）。\n" +
-                    "比 MinGap 小：花瓣是装饰，允许密铺。默认 50。",
+                    "比 MinGap 小：花瓣是装饰，允许密铺。默认 100。",
                     new AcceptableValueRange<float>(0f, 300f)));
+
+            MaxPetals = config.Bind(
+                section,
+                "MaxPetals",
+                900,
+                new ConfigDescription(
+                    "花瓣数量硬上限。\n" +
+                    "无论 PetalDensity 算出多少，实际最多铺这么多朵。默认 900（约 800-900 朵，性能安全）。",
+                    new AcceptableValueRange<int>(0, 3000)));
         }
 
         public static void OnLoaded()
@@ -133,7 +145,11 @@ namespace ClueDetail.Features.Host.FlowerScene
 
         internal static float PetalDensityValue => PetalDensity != null
             ? Clamp(PetalDensity.Value, 0f, 20f)
-            : 2f;
+            : 0.15f;
+
+        internal static int MaxPetalsValue => MaxPetals != null
+            ? ClampInt(MaxPetals.Value, 0, 3000)
+            : 900;
 
         internal static float OreDensityValue => OreDensity != null
             ? Clamp(OreDensity.Value, 0f, 20f)

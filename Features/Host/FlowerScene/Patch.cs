@@ -25,6 +25,9 @@ namespace ClueDetail.Features.Host.FlowerScene
 
                 try
                 {
+                    // ⚠️ 必须先清掉上一局铺的东西：不清的话每局都会在旧花上再叠一层，
+                    // 连续几局后设备数翻倍、客户端越来越卡（用户 2026-10-31 实测）。
+                    RemoveSpawned();
                     Reset();
                 }
                 catch (Exception ex)
