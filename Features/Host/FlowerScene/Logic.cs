@@ -95,6 +95,11 @@ namespace ClueDetail.Features.Host.FlowerScene
                         }
                     }
                 }
+
+                if (im?.ItemHolders != null)
+                {
+                    im.ItemHolders.Remove(holder);
+                }
             }
 
             for (int i = 0; i < SpawnedItems.Count; i++)
@@ -149,45 +154,55 @@ namespace ClueDetail.Features.Host.FlowerScene
                     return;
                 }
 
-                int petals = (int)(stats.Walkable * Cell * Cell * PetalDensityValue / 10000.0);
-                petals = clampInt(petals, 0, 3000);
+                // ⚠️ 顺序很重要：先把「特殊物品 / 矿石」放好，再铺花瓣。
+                // 反过来的话花瓣（密度高、数量多）会把全图占满，物品的 MinGap 采样必然全部失败 ——
+                // 2026-10-31 实测就是「花瓣 868、物品 0、矿石 0」。
+                int total = TotalValue;
+                int goldPlaced = 0;
+                if (total > 0 && PlaceAny(room, im, am, FishGoldId, IsParkCell, MinGapValue, true) != null)
+                {
+                    goldPlaced = 1;
+                }
+
+                int placedSpecial = goldPlaced;
+                for (int i = goldPlaced; i < total; i++)
+                {
+                    if (PlaceAny(room, im, am, -1, null, MinGapValue, true) != null)
+                    {
+                        placedSpecial++;
+                    }
+                }
+
                 int ore = (int)(stats.MineCells * Cell * Cell * OreDensityValue / 10000.0);
                 ore = clampInt(ore, 0, 200);
-
-                int placedPetal = 0;
-                for (int i = 0; i < petals; i++)
+                if (stats.MineCells > 0 && ore == 0)
                 {
-                    if (PlaceAny(room, im, am, Pick(PetalIds), null) != null)
-                    {
-                        placedPetal++;
-                    }
+                    ore = 1;    // 矿山再小也至少放一块
                 }
 
                 int placedOre = 0;
                 for (int i = 0; i < ore; i++)
                 {
-                    if (PlaceAny(room, im, am, Pick(OrePool), IsMineCell) != null)
+                    if (PlaceAny(room, im, am, Pick(OrePool), IsMineCell, MinGapValue, true) != null)
                     {
                         placedOre++;
                     }
                 }
 
-                int total = TotalValue;
-                int goldPlaced = 0;
+                int petals = (int)(stats.Walkable * Cell * Cell * PetalDensityValue / 10000.0);
+                petals = clampInt(petals, 0, 3000);
 
-                // 金鱼：全局唯一，优先放花园。
-                if (total > 0 && PlaceAny(room, im, am, FishGoldId, IsParkCell) != null)
+                int placedPetal = 0;
+                for (int i = 0; i < petals; i++)
                 {
-                    goldPlaced = 1;
-                }
-
-                for (int i = goldPlaced; i < total; i++)
-                {
-                    PlaceAny(room, im, am, -1, null);
+                    if (PlaceAny(room, im, am, Pick(PetalIds), null, PetalGapValue, PetalPickableValue) != null)
+                    {
+                        placedPetal++;
+                    }
                 }
 
                 global::ClueDetail.Core.Log.Info(
-                    $"花瓣场景：花瓣 {placedPetal}、矿石 {placedOre}、特殊物品 {total}（金鱼 {(goldPlaced > 0 ? "已放" : "未放")}）。");
+                    $"花瓣场景：花瓣 {placedPetal}、矿石 {placedOre}、特殊物品 {placedSpecial}（金鱼 {(goldPlaced > 0 ? "已放" : "未放")}）。");
             }
             catch (global::System.Exception ex)
             {
@@ -204,7 +219,9 @@ namespace ClueDetail.Features.Host.FlowerScene
             ServerItemManager im,
             ServerAreaManager am,
             int dataId,
-            global::System.Func<int, bool> accept)
+            global::System.Func<int, bool> accept,
+            float gap,
+            bool pickable)
         {
             var data = Managers.Data;
             if (data == null || data.MapData == null || data.MapArray == null)
@@ -237,7 +254,7 @@ namespace ClueDetail.Features.Host.FlowerScene
                     continue;
                 }
 
-                if (Blocked(x, y) || TooClose(p))
+                if (Blocked(x, y) || TooClose(p, gap))
                 {
                     continue;
                 }
@@ -248,7 +265,7 @@ namespace ClueDetail.Features.Host.FlowerScene
                     id = PickByCell(cellType);
                 }
 
-                DeviceInfo holder = DropItem(room, im, am, id, p);
+                DeviceInfo holder = DropItem(room, im, am, id, p, pickable);
                 if (holder != null)
                 {
                     return holder;
@@ -289,15 +306,18 @@ namespace ClueDetail.Features.Host.FlowerScene
         /// 在指定位置放一个地面物品，返回它的占位；失败返回 <c>null</c>。
         /// </summary>
         /// <remarks>
-        /// 与 <c>FlowerCarpet.DropFlower</c> 同一套：自己建 Item → 进列表 → SyncItem →
-        /// 建 ItemHolder → 广播 <c>S_SPAWN_DEVICE</c>，不走 <c>CreateAndDropItem</c>（它每次都播音效）。
+        /// 与 <c>CreateAndDropItem</c>（0.1.18 :175737）逐字等价，但不播音效。
+        /// ⚠️ **必须加入 <c>ItemManager.ItemHolders</c>**：服务端 <c>AcquireItem</c>（:175862）
+        /// 只认这个列表里的 id，否则物品显示正常但永远捡不起来。
+        /// <paramref name="pickable"/> 为 false 时故意不登记 —— 就成了"看得见但捡不到"的装饰。
         /// </remarks>
         private static DeviceInfo DropItem(
             ServerGameRoom room,
             ServerItemManager im,
             ServerAreaManager am,
             int dataId,
-            PosInfo pos)
+            PosInfo pos,
+            bool pickable)
         {
             try
             {
@@ -324,6 +344,11 @@ namespace ClueDetail.Features.Host.FlowerScene
                     area.Info.DeviceInfos.Add(holder);
                 }
 
+                if (pickable && !ContainsHolder(im, holder.DeviceId))
+                {
+                    im.ItemHolders.Add(holder);
+                }
+
                 room.Broadcast(new S_SPAWN_DEVICE { Device = holder });
                 Spawned.Add(holder);
                 SpawnedItems.Add(item);
@@ -334,6 +359,25 @@ namespace ClueDetail.Features.Host.FlowerScene
                 global::ClueDetail.Core.Log.Warn($"花瓣场景：生成物品 {dataId} 失败（{ex.Message}）。");
                 return null;
             }
+        }
+
+        private static bool ContainsHolder(ServerItemManager im, int deviceId)
+        {
+            var list = im.ItemHolders;
+            if (list == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i] != null && list[i].DeviceId == deviceId)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         // ══════════════════ 地图统计 ══════════════════
@@ -402,9 +446,9 @@ namespace ClueDetail.Features.Host.FlowerScene
             return data.MapArray[x][y];
         }
 
-        private static bool TooClose(PosInfo p)
+        private static bool TooClose(PosInfo p, float gap)
         {
-            float gapSq = MinGapValue * MinGapValue;
+            float gapSq = gap * gap;
             for (int i = 0; i < Spawned.Count; i++)
             {
                 PosInfo hp = Spawned[i]?.Pos;

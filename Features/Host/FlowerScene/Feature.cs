@@ -46,6 +46,12 @@ namespace ClueDetail.Features.Host.FlowerScene
         /// <summary>单个房间的特殊物品上限（防止名额全挤进一间）。</summary>
         public static ConfigEntry<int> MaxPerRoom { get; private set; }
 
+        /// <summary>花瓣是否可以被捡起（false = 纯装饰，服务端拒绝拾取）。</summary>
+        public static ConfigEntry<bool> PetalPickable { get; private set; }
+
+        /// <summary>花瓣之间 / 花瓣与物品之间的最小间距（比物品间小，避免花瓣铺满后把物品挤掉）。</summary>
+        public static ConfigEntry<float> PetalGap { get; private set; }
+
         public static void Bind(ConfigFile config, string section)
         {
             TotalSpecialItems = config.Bind(
@@ -91,6 +97,22 @@ namespace ClueDetail.Features.Host.FlowerScene
                 new ConfigDescription(
                     "单个房间的特殊物品上限。默认 8。",
                     new AcceptableValueRange<int>(1, 50)));
+
+            PetalPickable = config.Bind(
+                section,
+                "PetalPickable",
+                true,
+                "花瓣是否可以被捡起。\n" +
+                "true = 和普通掉落物一样能捡；false = 纯装饰（服务端拒绝拾取，客户端仍可能显示拾取提示）。");
+
+            PetalGap = config.Bind(
+                section,
+                "PetalGap",
+                50f,
+                new ConfigDescription(
+                    "花瓣之间以及花瓣与物品之间的最小间距（游戏单位）。\n" +
+                    "比 MinGap 小：花瓣是装饰，允许密铺。默认 50。",
+                    new AcceptableValueRange<float>(0f, 300f)));
         }
 
         public static void OnLoaded()
@@ -124,6 +146,12 @@ namespace ClueDetail.Features.Host.FlowerScene
         internal static int MaxPerRoomValue => MaxPerRoom != null
             ? ClampInt(MaxPerRoom.Value, 1, 50)
             : 8;
+
+        internal static bool PetalPickableValue => PetalPickable == null || PetalPickable.Value;
+
+        internal static float PetalGapValue => PetalGap != null
+            ? Clamp(PetalGap.Value, 0f, 300f)
+            : 50f;
 
         private static float Clamp(float v, float min, float max)
         {
