@@ -325,10 +325,44 @@ namespace ClueDetail.Features.Host.GhostPresence
         // ══════════════════ 发包 ══════════════════
 
         /// <summary>把某个玩家的「当前状态」按收件人重发一次（先 despawn 再 spawn）。</summary>
+        /// <remarks>
+        /// <b>活人（铃铛伪装）必须遵守原版可见性集合</b>：只发给 <c>target.SharedPlayers</c>
+        /// —— 那是「能看到 target 的人」的集合（<c>AddPlayer</c> :178898 / <c>RemovePlayer</c> :178917 维护），
+        /// HideAndSeek 的 AOI 也是改它。遍历 <c>room.Players</c> 全体直发会绕过 AOI。
+        /// <b>真鬼显形</b>保持全房间：死者的 <c>SharedPlayers</c> 在死亡时已被清空，
+        /// 改成只发集合会让显形永远没人收得到。
+        /// </remarks>
         private static void BroadcastRespawn(ServerGameRoom room, ServerGamePlayer target, bool asGhost)
         {
+            if (target == null || target.PublicInfo == null)
+            {
+                return;
+            }
+
+            if (target.IsAlive && BellRespectAoiValue)
+            {
+                foreach (ServerGamePlayer observer in target.SharedPlayers)
+                {
+                    if (observer == null || observer == target || observer.Session == null)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        SendSpawn(observer, target, asGhost);
+                    }
+                    catch (Exception ex)
+                    {
+                        global::ClueDetail.Core.Log.Exception(ex, "鬼魂彩蛋：重发玩家状态失败。");
+                    }
+                }
+
+                return;
+            }
+
             List<ServerGamePlayer> players = room.Players;
-            if (players == null || target.PublicInfo == null)
+            if (players == null)
             {
                 return;
             }
@@ -354,8 +388,36 @@ namespace ClueDetail.Features.Host.GhostPresence
 
         private static void BroadcastDespawn(ServerGameRoom room, ServerGamePlayer target)
         {
+            if (target == null || target.PublicInfo == null)
+            {
+                return;
+            }
+
+            // 活人走可见性集合（与 BroadcastRespawn 同口径）；真鬼显形保持全房间。
+            if (target.IsAlive && BellRespectAoiValue)
+            {
+                foreach (ServerGamePlayer observer in target.SharedPlayers)
+                {
+                    if (observer == null || observer == target || observer.Session == null)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        observer.Session.Send(new S_DESPAWN { PlayerId = target.PublicInfo.PlayerId });
+                    }
+                    catch (Exception ex)
+                    {
+                        global::ClueDetail.Core.Log.Exception(ex, "鬼魂彩蛋：隐藏玩家失败。");
+                    }
+                }
+
+                return;
+            }
+
             List<ServerGamePlayer> players = room.Players;
-            if (players == null || target.PublicInfo == null)
+            if (players == null)
             {
                 return;
             }
@@ -419,11 +481,38 @@ namespace ClueDetail.Features.Host.GhostPresence
                 return;
             }
 
+            // 遵守可见性集合：收件人当前看不到他（AOI 外）就什么都不发，
+            // 否则 roster / 重连路径会再次绕过 AOI。
+            if (BellRespectAoiValue && !IsVisibleTo(target, recipient))
+            {
+                return;
+            }
+
             var info = target.PublicInfo.Clone();
             info.IsGhost = true;
             // 立刻补一帧 S_SPAWN：客户端 Spawn(S_ADD_PLAYER) 建出来的是「真人缓存」，
             // 不补这一下就会以真身显示。
             sink?.Send(new S_SPAWN { Player = info });
+        }
+
+        /// <summary>观察者当前是否在 target 的可见性集合里。</summary>
+        private static bool IsVisibleTo(ServerGamePlayer target, int observerId)
+        {
+            if (target == null || target.SharedPlayers == null)
+            {
+                return false;
+            }
+
+            foreach (ServerGamePlayer observer in target.SharedPlayers)
+            {
+                if (observer != null && observer.PublicInfo != null
+                    && observer.PublicInfo.PlayerId == observerId)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static ServerGamePlayer FindPlayer(List<ServerGamePlayer> players, int id)

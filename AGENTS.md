@@ -361,6 +361,12 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
       ⚠️ 死亡的人必须立刻从伪装集合剔除（`PruneDeadDisguises`），且 `ClearDisguises` 只对**活人**恢复：
       否则会对死者再发一帧 `S_SPAWN(IsGhost=false)`，回放（`RecordManager` 录 `S_SPAWN`/`S_DESPAWN` 快照）
       里就表现为「死而复生」。
+      ⚠️ **铃铛幽灵必须遵守 `Player.SharedPlayers`**（= 能看到该玩家的人，`AddPlayer` :178898 /
+      `RemovePlayer` :178917 维护，HideAndSeek 的 AOI 也改它）：活人路径只对集合内发包，
+      **不能**遍历 `room.Players` 直发；真鬼显形才走全房间（死者集合已清空）。
+      另在 `HostPeerSession.Send` 上挂 **S_SPAWN Prefix**：AOI 的 `AddPlayer` 发的 `S_SPAWN`
+      会把副本改 `IsGhost=true`（`ref IMessage` 覆写，不额外发包）；`OnAddPlayerSent` 补发前
+      也要检查收件人在集合内。配置 `BellRespectAoi`（默认 true），false 才退回旧的全房间实验行为。
     - **真鬼显形**：每 20–35 秒（`RevealIntervalMin/Max`）在所有人（含调查阶段）视野显形
       2–4 秒（`RevealDurationMin/Max`），**不改生死**。
     - **安魂曲**：显形期间以幽灵位置为中心、按三拍一组（`RequiemBeatGap` 0.7 / `RequiemRestGap` 2.4）

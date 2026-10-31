@@ -51,6 +51,9 @@ namespace ClueDetail.Features.Host.GhostPresence
         /// <summary>安魂曲开关。</summary>
         public static ConfigEntry<bool> Requiem { get; private set; }
 
+        /// <summary>铃铛幽灵是否遵守原版可见性集合（<c>Player.SharedPlayers</c>）。</summary>
+        public static ConfigEntry<bool> BellRespectAoi { get; private set; }
+
         /// <summary>铃铛的物品 DataId。</summary>
         public static ConfigEntry<int> BellItemId { get; private set; }
 
@@ -97,6 +100,14 @@ namespace ClueDetail.Features.Host.GhostPresence
                 true,
                 "铃铛伪装：生者手持铃铛时，在其他人视野中显示为幽灵。\n" +
                 "本人视角不变；丢铃铛 / 换手立即解除；只在生存阶段生效。");
+
+            BellRespectAoi = config.Bind(
+                section,
+                "BellRespectAoi",
+                true,
+                "铃铛幽灵是否遵守原版可见性集合（Player.SharedPlayers）。\n" +
+                "true = 只发给当前能看到该玩家的人（与 HideAndSeek 的 AOI 裁剪一致）；\n" +
+                "false = 保留旧的「全房间可见」实验行为。");
 
             Reveal = config.Bind(
                 section,
@@ -179,6 +190,9 @@ namespace ClueDetail.Features.Host.GhostPresence
         }
 
         internal static bool DisguiseOn => Disguise == null || Disguise.Value;
+
+        /// <summary>铃铛幽灵是否遵守原版可见性集合（默认 true）。</summary>
+        internal static bool BellRespectAoiValue => BellRespectAoi == null || BellRespectAoi.Value;
 
         internal static bool RevealOn => Reveal == null || Reveal.Value;
 
