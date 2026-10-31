@@ -59,7 +59,13 @@ namespace ClueDetail.Features.Host.GhostPresence
             }
         }
 
-        /// <summary>阶段变化时调用：离开生存阶段就撤掉所有伪装。</summary>
+        /// <summary>
+        /// 阶段变化时调用：离开生存阶段就撤掉所有伪装，并立刻收回所有正在显形的鬼。
+        /// </summary>
+        /// <remarks>
+        /// ⚠️ 收显形这一步是必需的：生存阶段最后一秒显形的鬼带着 <c>State=Idle</c> 进入调查阶段，
+        /// 会在阶段切换后的一小段时间里看起来像"复活了"（2026-10-31 用户实机反馈）。
+        /// </remarks>
         internal static void OnPhaseChanged(EGameState state)
         {
             ServerGameRoom room = ServerGameRoom.Instance;
@@ -72,6 +78,8 @@ namespace ClueDetail.Features.Host.GhostPresence
             {
                 ClearDisguises(room);
             }
+
+            ClearReveals(room);
         }
 
         /// <summary>热关闭时把已经发出去的状态全部收回。</summary>
@@ -229,13 +237,15 @@ namespace ClueDetail.Features.Host.GhostPresence
 
         private static void ClearReveals(ServerGameRoom room)
         {
-            if (RevealUntil.Count == 0)
+            if (RevealUntil.Count == 0 && NextRevealAt.Count == 0)
             {
                 return;
             }
 
             var ids = new List<int>(RevealUntil.Keys);
             RevealUntil.Clear();
+            // 阶段切换后重新开始计时：否则刚进调查时下一次显形可能已经"到期"，立刻又亮一次。
+            NextRevealAt.Clear();
             NextBellAt.Clear();
             RequiemBeat.Clear();
 
