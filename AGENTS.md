@@ -375,10 +375,12 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
       但服务端 `UseWeapon` 有 `!IsAlive → "target dead"` 拒绝；`Collider` 会从 trigger 变实体。
     - ⚠️ 审判/投票阶段强制真身：`State != Survive` 时清空伪装集合并恢复。
 23. **花瓣场景（彩蛋补丁）**（2026-10-31，待实机）：`Features/Host/FlowerScene/`，实验性、**默认关闭**。
-    - 整图按 `PetalDensity`（每万平方单位，默认 2.0）铺花瓣（1021–1024）。
+    - 整图按 `PetalDensity`（每万平方单位，默认 0.15）铺花瓣（1021–1024），硬上限 `MaxPetals`（默认 900）；
+      **花瓣之间**用 `PetalSpacing`（默认 140）、**花瓣与物品之间**用 `PetalGap`（默认 100）；**矿山不放花**。
     - 全图特殊物品总数 `TotalSpecialItems`（默认 24）：按落点房间类型选物品 —— 花园（`Park`）出鱼
-      （1059/1060），其他房间出铃铛 3009 / 气喇叭 3008 / 玩具锤 3007 / 罐头 3001–3005 /
-      奖杯 1062–1064；**金鱼 1061 全局唯一**，优先放花园。
+      （`FishPool` 普通鱼 5 : 稀有鱼 1，普通鱼占绝对多数），其他房间按**稀有度加权**：
+      罐头（各 3）> 玩具锤（2）> 气喇叭 / 铃铛（1）> 铜奖杯（2）> 银奖杯（1）> 金奖杯（1）；
+      **金鱼 1061 全局唯一**，优先放花园。
     - 矿山（`Mine`/`MineEdge`）按 `OreDensity`（默认 1.5）放随机矿石（1032–1034），**不占**特殊物品名额。
     - 位置判定：`ValidPosition`（`MapArray` 可通行）+ 实体碰撞避障（同 FlowerCarpet）+ `MinGap`（默认 200）。
     - 生成：自己构造 `S_SPAWN_DEVICE`（同 FlowerCarpet，避开 `DropItemSfx` 音效叠加）；

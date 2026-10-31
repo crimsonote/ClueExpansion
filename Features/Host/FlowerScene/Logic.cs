@@ -24,16 +24,38 @@ namespace ClueDetail.Features.Host.FlowerScene
 
         private static readonly List<ServerItem> SpawnedItems = new List<ServerItem>();
 
+        /// <summary>已放花瓣的位置（与物品分开记录，两者用不同间距）。</summary>
+        private static readonly List<PosInfo> SpawnedFlowerPos = new List<PosInfo>();
+
+        /// <summary>已放特殊物品 / 矿石的位置。</summary>
+        private static readonly List<PosInfo> SpawnedItemPos = new List<PosInfo>();
+
         // ══════════════════ 物品池 ══════════════════
 
         /// <summary>花瓣（1021–1024）。</summary>
         private static readonly int[] PetalIds = { 1021, 1022, 1023, 1024 };
 
-        /// <summary>普通杂物：罐头（汽水）、玩具锤、气喇叭、铃铛、奖杯。</summary>
-        private static readonly int[] MiscPool = { 3001, 3002, 3003, 3004, 3005, 3007, 3008, 3009, 1062, 1063, 1064 };
+        /// <summary>
+        /// 普通杂物按稀有度加权（重复条目 = 权重）：
+        /// 罐头最常见（各 3）、玩具锤（2）、气喇叭/铃铛（1）、铜奖杯（2）、银/金奖杯（各 1）。
+        /// </summary>
+        private static readonly int[] MiscPool =
+        {
+            3001, 3001, 3001,
+            3002, 3002, 3002,
+            3003, 3003, 3003,
+            3004, 3004, 3004,
+            3005, 3005, 3005,
+            3007, 3007,
+            3008,
+            3009,
+            1064, 1064,
+            1063,
+            1062,
+        };
 
-        /// <summary>花园的鱼：普通多、稀有少（金鱼单独放一条）。</summary>
-        private static readonly int[] FishPool = { 1059, 1059, 1059, 1060 };
+        /// <summary>花园的鱼：普通鱼占绝对多数（金鱼单独放一条）。</summary>
+        private static readonly int[] FishPool = { 1059, 1059, 1059, 1059, 1059, 1060 };
 
         /// <summary>矿山矿石（蓝 / 绿 / 红）。</summary>
         private static readonly int[] OrePool = { 1032, 1033, 1034 };
@@ -52,6 +74,8 @@ namespace ClueDetail.Features.Host.FlowerScene
         {
             Spawned.Clear();
             SpawnedItems.Clear();
+            SpawnedFlowerPos.Clear();
+            SpawnedItemPos.Clear();
             _scattered = false;
         }
 
@@ -113,6 +137,8 @@ namespace ClueDetail.Features.Host.FlowerScene
 
             Spawned.Clear();
             SpawnedItems.Clear();
+            SpawnedFlowerPos.Clear();
+            SpawnedItemPos.Clear();
         }
 
         // ══════════════════ 铺设 ══════════════════
@@ -159,7 +185,7 @@ namespace ClueDetail.Features.Host.FlowerScene
                 // 2026-10-31 实测就是「花瓣 868、物品 0、矿石 0」。
                 int total = TotalValue;
                 int goldPlaced = 0;
-                if (total > 0 && PlaceAny(room, im, am, FishGoldId, IsParkCell, MinGapValue, true) != null)
+                if (total > 0 && PlaceAny(room, im, am, FishGoldId, IsParkCell, MinGapValue, true, false) != null)
                 {
                     goldPlaced = 1;
                 }
@@ -167,7 +193,7 @@ namespace ClueDetail.Features.Host.FlowerScene
                 int placedSpecial = goldPlaced;
                 for (int i = goldPlaced; i < total; i++)
                 {
-                    if (PlaceAny(room, im, am, -1, null, MinGapValue, true) != null)
+                    if (PlaceAny(room, im, am, -1, null, MinGapValue, true, false) != null)
                     {
                         placedSpecial++;
                     }
@@ -183,7 +209,7 @@ namespace ClueDetail.Features.Host.FlowerScene
                 int placedOre = 0;
                 for (int i = 0; i < ore; i++)
                 {
-                    if (PlaceAny(room, im, am, Pick(OrePool), IsMineCell, MinGapValue, true) != null)
+                    if (PlaceAny(room, im, am, Pick(OrePool), IsMineCell, MinGapValue, true, false) != null)
                     {
                         placedOre++;
                     }
@@ -195,7 +221,8 @@ namespace ClueDetail.Features.Host.FlowerScene
                 int placedPetal = 0;
                 for (int i = 0; i < petals; i++)
                 {
-                    if (PlaceAny(room, im, am, Pick(PetalIds), null, PetalGapValue, PetalPickableValue) != null)
+                    // 矿山不放花；花瓣之间用 PetalSpacing，花瓣与物品之间用 PetalGap。
+                    if (PlaceAny(room, im, am, Pick(PetalIds), NotMineCell, PetalSpacingValue, PetalPickableValue, true) != null)
                     {
                         placedPetal++;
                     }
@@ -222,7 +249,8 @@ namespace ClueDetail.Features.Host.FlowerScene
             int dataId,
             global::System.Func<int, bool> accept,
             float gap,
-            bool pickable)
+            bool pickable,
+            bool isPetal)
         {
             var data = Managers.Data;
             if (data == null || data.MapData == null || data.MapArray == null)
@@ -255,7 +283,21 @@ namespace ClueDetail.Features.Host.FlowerScene
                     continue;
                 }
 
-                if (Blocked(x, y) || TooClose(p, gap))
+                if (Blocked(x, y))
+                {
+                    continue;
+                }
+
+                // 花瓣与花瓣用 PetalSpacing，花瓣与物品用 PetalGap；
+                // 物品与任何东西都用 MinGap。
+                if (isPetal)
+                {
+                    if (TooClose(SpawnedFlowerPos, p, gap) || TooClose(SpawnedItemPos, p, PetalGapValue))
+                    {
+                        continue;
+                    }
+                }
+                else if (TooClose(SpawnedFlowerPos, p, gap) || TooClose(SpawnedItemPos, p, gap))
                 {
                     continue;
                 }
@@ -266,7 +308,7 @@ namespace ClueDetail.Features.Host.FlowerScene
                     id = PickByCell(cellType);
                 }
 
-                DeviceInfo holder = DropItem(room, im, am, id, p, pickable);
+                DeviceInfo holder = DropItem(room, im, am, id, p, pickable, isPetal);
                 if (holder != null)
                 {
                     return holder;
@@ -279,6 +321,11 @@ namespace ClueDetail.Features.Host.FlowerScene
         private static bool IsMineCell(int cellType)
         {
             return cellType == MineType || cellType == MineEdgeType;
+        }
+
+        private static bool NotMineCell(int cellType)
+        {
+            return cellType != MineType && cellType != MineEdgeType;
         }
 
         private static bool IsParkCell(int cellType)
@@ -318,7 +365,8 @@ namespace ClueDetail.Features.Host.FlowerScene
             ServerAreaManager am,
             int dataId,
             PosInfo pos,
-            bool pickable)
+            bool pickable,
+            bool isPetal)
         {
             try
             {
@@ -353,6 +401,14 @@ namespace ClueDetail.Features.Host.FlowerScene
                 room.Broadcast(new S_SPAWN_DEVICE { Device = holder });
                 Spawned.Add(holder);
                 SpawnedItems.Add(item);
+                if (isPetal)
+                {
+                    SpawnedFlowerPos.Add(pos);
+                }
+                else
+                {
+                    SpawnedItemPos.Add(pos);
+                }
                 return holder;
             }
             catch (global::System.Exception ex)
@@ -447,12 +503,17 @@ namespace ClueDetail.Features.Host.FlowerScene
             return data.MapArray[x][y];
         }
 
-        private static bool TooClose(PosInfo p, float gap)
+        private static bool TooClose(List<PosInfo> positions, PosInfo p, float gap)
         {
-            float gapSq = gap * gap;
-            for (int i = 0; i < Spawned.Count; i++)
+            if (positions == null || positions.Count == 0)
             {
-                PosInfo hp = Spawned[i]?.Pos;
+                return false;
+            }
+
+            float gapSq = gap * gap;
+            for (int i = 0; i < positions.Count; i++)
+            {
+                PosInfo hp = positions[i];
                 if (hp == null)
                 {
                     continue;

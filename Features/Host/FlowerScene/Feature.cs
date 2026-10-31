@@ -49,8 +49,11 @@ namespace ClueDetail.Features.Host.FlowerScene
         /// <summary>花瓣是否可以被捡起（false = 纯装饰，服务端拒绝拾取）。</summary>
         public static ConfigEntry<bool> PetalPickable { get; private set; }
 
-        /// <summary>花瓣之间 / 花瓣与物品之间的最小间距（比物品间小，避免花瓣铺满后把物品挤掉）。</summary>
+        /// <summary>花瓣与物品之间的最小间距（比物品间小，避免花瓣铺满后把物品挤掉）。</summary>
         public static ConfigEntry<float> PetalGap { get; private set; }
+
+        /// <summary>花瓣与花瓣之间的最小间距（独立配置，默认比 PetalGap 大一点）。</summary>
+        public static ConfigEntry<float> PetalSpacing { get; private set; }
 
         /// <summary>花瓣数量硬上限（防止配置写大 + 小间距把全图铺满）。</summary>
         public static ConfigEntry<int> MaxPetals { get; private set; }
@@ -113,9 +116,18 @@ namespace ClueDetail.Features.Host.FlowerScene
                 "PetalGap",
                 100f,
                 new ConfigDescription(
-                    "花瓣之间以及花瓣与物品之间的最小间距（游戏单位）。\n" +
-                    "比 MinGap 小：花瓣是装饰，允许密铺。默认 100。",
+                    "花瓣与**物品**之间的最小间距（游戏单位）。\n" +
+                    "比 MinGap 小：花瓣是装饰，允许靠近物品。默认 100。",
                     new AcceptableValueRange<float>(0f, 300f)));
+
+            PetalSpacing = config.Bind(
+                section,
+                "PetalSpacing",
+                140f,
+                new ConfigDescription(
+                    "花瓣与**花瓣**之间的最小间距（游戏单位）。\n" +
+                    "独立于 PetalGap：调小更密，调大更稀。默认 140。",
+                    new AcceptableValueRange<float>(0f, 400f)));
 
             MaxPetals = config.Bind(
                 section,
@@ -167,7 +179,11 @@ namespace ClueDetail.Features.Host.FlowerScene
 
         internal static float PetalGapValue => PetalGap != null
             ? Clamp(PetalGap.Value, 0f, 300f)
-            : 50f;
+            : 100f;
+
+        internal static float PetalSpacingValue => PetalSpacing != null
+            ? Clamp(PetalSpacing.Value, 0f, 400f)
+            : 140f;
 
         private static float Clamp(float v, float min, float max)
         {
