@@ -96,8 +96,6 @@ namespace ClueDetail.Features.Host.MissionReportDelay
                 return false;       // 快到了，按原版立即报告
             }
 
-            // ① 倒计时停滞：报告时刻整体后移
-            corpse.DeviceInfo.StateList[5] = reportAt + delay;
 
             // ② 推迟后重新触发
             _delayed = true;
