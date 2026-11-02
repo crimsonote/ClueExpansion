@@ -17,6 +17,11 @@ namespace ClueDetail.Features.Host.MissionReportDelay
         /// <summary>本次推迟已经发生过一次（防无限推迟）。</summary>
         private static bool _delayed;
 
+        /// <summary>推迟期间由我们按下的暂停（退出时恢复原值）。</summary>
+        private static bool _pausedByUs;
+
+        private static bool _prevPaused;
+
         /// <summary>
         /// <c>MissionManager.TriggerAllClearEnd</c> 是 private；<c>MissionManager</c> 本身是
         /// internal ⇒ 只能按名字找类型 + 方法。
@@ -98,6 +103,15 @@ namespace ClueDetail.Features.Host.MissionReportDelay
 
 
             // ② 推迟后重新触发
+            // 推迟期间冻结融毁倒计时：原版 SurvivalTick 见到 Paused 只重排、不 Tick，
+            // SurviveTime / RemainTime 都不动 ⇒ 尸体倒计时 job 也一起停。
+            _prevPaused = tm.Paused;
+            if (!tm.Paused)
+            {
+                tm.Paused = true;
+                _pausedByUs = true;
+            }
+
             _delayed = true;
             room.PushAfter(delay * 1000, Retrigger);
 
@@ -108,8 +122,26 @@ namespace ClueDetail.Features.Host.MissionReportDelay
             return true;            // 拦截原版
         }
 
+        /// <summary>把推迟期间按下的暂停恢复成原值（无论走哪条分支都要调）。</summary>
+        private static void ResumeTime()
+        {
+            if (!_pausedByUs)
+            {
+                return;
+            }
+
+            _pausedByUs = false;
+            ServerTimeManager tm = ServerTimeManager.Instance;
+            if (tm != null)
+            {
+                tm.Paused = _prevPaused;
+            }
+        }
+
         private static void Retrigger()
         {
+            ResumeTime();
+
             try
             {
                 ServerGameRoom room = ServerGameRoom.Instance;
