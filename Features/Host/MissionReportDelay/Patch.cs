@@ -3,39 +3,19 @@ using System.Reflection;
 using ClueDetail.Core;
 using HarmonyLib;
 using Protocol;
-using ServerCorpse = Server.Game.Corpse;
 using ServerGameRoom = Server.Game.GameRoom;
 using ServerTimeManager = Server.Game.TimeManager;
 
 namespace ClueDetail.Features.Host.MissionReportDelay
 {
     /// <summary>
-    /// 白方任务进度满时的「报告 + 结算」延迟（实验性）。
+    /// 任务满延迟的 Harmony 挂点。补丁类必须是 Feature 的**直接**嵌套类型（装载器只扫一层）。
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 原版链路（0.1.18c）：<c>CheckAllClear</c> → <c>AllClear = true</c> →
-    /// <c>TriggerAllClearEnd()</c>：
-    /// 有未发现尸体 → <c>DiscoverByTimeOver()</c>（立即报告）；没尸体 →
-    /// <c>PushAfter(3000, ClearAllMission)</c>（白方胜利）。
-    /// </para>
-    /// <para>
-    /// 本功能只拦 **任务满** 这一次调用：距尸体自动报告仍 ≥ 阈值时，推迟 N 秒再走原版。
-    /// 不碰 <c>TimeManager</c>（融毁倒计时、SurviveTime 一律原版节奏），
-    /// 也不碰尸体的 <c>_survivalQueue</c>。
-    /// </para>
-    /// </remarks>
     internal partial class MissionReportDelayFeature
     {
-        private static Type _missionManagerType;
-        private static MethodInfo _triggerMethod;
-
-        /// <summary>本次推迟已经发生过一次（防无限推迟）。</summary>
-        private static bool _delayed;
-
         /// <summary>
-        /// <c>MissionManager.TriggerAllClearEnd</c> 是 private；<c>MissionManager</c> 本身是
-        /// internal ⇒ 只能按名字找类型 + 方法。
+        /// <c>MissionManager.TriggerAllClearEnd</c>（0.1.18 :169787，private，类型 internal）：
+        /// 唯一收口。拦它 = 同时阻止“报告尸体”和“白方胜利”。
         /// </summary>
         [HarmonyPatch]
         internal static class TriggerAllClearEndHook
@@ -43,10 +23,14 @@ namespace ClueDetail.Features.Host.MissionReportDelay
             [HarmonyTargetMethod]
             private static MethodBase Target()
             {
-                _missionManagerType = AccessTools.TypeByName("Server.Game.MissionManager");
-                _triggerMethod = _missionManagerType == null
-                    ? null
-                    : AccessTools.Method(_missionManagerType, "TriggerAllClearEnd");
+                ResolveReflection();
+                if (_triggerMethod == null)
+                {
+                    global::ClueDetail.Core.Log.Warn(
+                        "任务报告延迟：找不到 MissionManager.TriggerAllClearEnd，补丁不会挂载。");
+                    return null;
+                }
+
                 return _triggerMethod;
             }
 
@@ -57,8 +41,7 @@ namespace ClueDetail.Features.Host.MissionReportDelay
 
                 try
                 {
-                    // Decide 返回 true = 拦截原版，false = 放行。
-                    return Decide();
+                    return ShouldRunOriginal();
                 }
                 catch (Exception ex)
                 {
@@ -68,77 +51,78 @@ namespace ClueDetail.Features.Host.MissionReportDelay
             }
         }
 
-        /// <returns>true = 拦截原版（本次不做任何事），false = 放行原版。</returns>
-        private static bool Decide()
+        /// <summary>
+        /// <c>TimeManager.UpdateRemainTime</c>（0.1.18 :181703）：任何来源的加/扣时间都压回冻结值。
+        /// </summary>
+        /// <remarks>
+        /// <c>Priority.Low</c>：跑在其它改时间的补丁之后，保证最终值是冻结值。
+        /// </remarks>
+        [HarmonyPriority(Priority.Low)]
+        [HarmonyPatch(typeof(ServerTimeManager), nameof(ServerTimeManager.UpdateRemainTime))]
+        internal static class FreezeUpdateRemainTimeHook
         {
-            ServerGameRoom room = ServerGameRoom.Instance;
-            ServerTimeManager tm = ServerTimeManager.Instance;
-            if (room == null || tm == null)
+            [HarmonyPostfix]
+            private static void Postfix(ServerTimeManager __instance)
             {
-                return false;
+                if (!FeatureLoader.Enabled<MissionReportDelayFeature>()) return;
+                if (!_freeze) return;
+                ApplyFreeze(__instance);
             }
-
-            // 已经不在生存阶段（手动报告了尸体、或别的原因已进调查/结算）：什么都不做。
-            if (room.State != EGameState.Survive)
-            {
-                return true;
-            }
-
-            // 推迟过一次后的重触发：放行原版（否则无限推迟）。
-            if (_delayed)
-            {
-                _delayed = false;
-                return false;
-            }
-
-            ServerCorpse corpse = room.FindOldestUndiscoveredCorpse();
-            if (corpse == null || corpse.DeviceInfo == null || corpse.DeviceInfo.StateList == null)
-            {
-                return false;       // 没尸体 ⇒ 原版走白方胜利结算
-            }
-
-            int reportAt = corpse.DeviceInfo.StateList[5];
-            if (reportAt <= 0)
-            {
-                return false;       // 没排自动报告
-            }
-
-            int remain = reportAt - tm.SurviveTime;
-            int threshold = ThresholdValue;
-            int delay = DelayValue;
-            if (remain < threshold || delay <= 0)
-            {
-                return false;       // 快到了，按原版立即报告
-            }
-
-            _delayed = true;
-            room.PushAfter(delay * 1000, Retrigger);
-
-            global::ClueDetail.Core.Log.Info(
-                $"任务报告延迟：尸体自动报告剩 {remain} 秒（≥{threshold}），" +
-                $"报告与白方结算推迟 {delay} 秒。");
-
-            return true;            // 拦截原版
         }
 
-        private static void Retrigger()
+        /// <summary>
+        /// <c>TimeManager.TickSurvive</c>（0.1.18 :181688）：正常情况下 <c>AllClear</c> 已让
+        /// <c>SurvivalTick</c> 停摆；这是保险，防止别的路径继续 Tick 时倒计时往下掉。
+        /// </summary>
+        [HarmonyPriority(Priority.Low)]
+        [HarmonyPatch(typeof(ServerTimeManager), nameof(ServerTimeManager.TickSurvive))]
+        internal static class FreezeTickSurviveHook
         {
-            try
+            [HarmonyPostfix]
+            private static void Postfix(ServerTimeManager __instance)
             {
-                ServerGameRoom room = ServerGameRoom.Instance;
-                if (room != null && room.State != EGameState.Survive)
-                {
-                    // 推迟期间已经手动报告 → 走原版的调查流程，这里不再触发任何结算。
-                    _delayed = false;
-                    return;
-                }
-
-                object manager = AccessTools.PropertyGetter(_missionManagerType, "Instance")?.Invoke(null, null);
-                _triggerMethod?.Invoke(manager, null);
+                if (!FeatureLoader.Enabled<MissionReportDelayFeature>()) return;
+                if (!_freeze) return;
+                ApplyFreeze(__instance);
             }
-            catch (Exception ex)
+        }
+
+        /// <summary>
+        /// <c>GameRoom.ChangeGameState(EGameState, EGameState)</c>（0.1.18 :173057）：
+        /// 任何阶段切换都清一次状态（手动报告 → 调查阶段时尤其重要）。
+        /// </summary>
+        [HarmonyPatch(typeof(ServerGameRoom), "ChangeGameState", new[] { typeof(EGameState), typeof(EGameState) })]
+        internal static class StateChangeHook
+        {
+            [HarmonyPostfix]
+            private static void Postfix()
             {
-                global::ClueDetail.Core.Log.Exception(ex, "任务报告延迟：重新触发失败。");
+                if (!FeatureLoader.Enabled<MissionReportDelayFeature>()) return;
+                OnStateChanged();
+            }
+        }
+
+        /// <summary><c>TimeManager.ResetSurvival</c>（0.1.18 :181784）：换局清空。</summary>
+        [HarmonyPatch(typeof(ServerTimeManager), nameof(ServerTimeManager.ResetSurvival))]
+        internal static class RoundResetHook
+        {
+            [HarmonyPostfix]
+            private static void Postfix()
+            {
+                if (!FeatureLoader.Enabled<MissionReportDelayFeature>()) return;
+                Reset(false);
+            }
+        }
+
+        /// <summary><c>GameRoom.FullReset</c>（0.1.18 :172984）：房间完全复位。</summary>
+        [HarmonyPatch(typeof(ServerGameRoom), nameof(ServerGameRoom.FullReset))]
+        internal static class FullResetHook
+        {
+            [HarmonyPostfix]
+            private static void Postfix()
+            {
+                if (!FeatureLoader.Enabled<MissionReportDelayFeature>()) return;
+                Reset(false);
             }
         }
     }

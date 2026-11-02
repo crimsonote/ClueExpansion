@@ -1,37 +1,32 @@
 ﻿using System;
-using System.Reflection;
 using BepInEx.Configuration;
 using ClueDetail.Core;
-using HarmonyLib;
-using ServerGameRoom = Server.Game.GameRoom;
-using ServerTimeManager = Server.Game.TimeManager;
 
 namespace ClueDetail.Features.Host.MissionReportDelay
 {
     /// <summary>
-    /// 白方任务进度满时的「报告 + 结算」延迟（实验性）。
+    /// 白方任务进度满时的「报告尸体 / 白方结算」延迟。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 原版链路（0.1.18c）：
-    /// <code>
-    /// MissionManager.CheckAllClear → AllClear = true → TriggerAllClearEnd()
-    ///   ├ 有未发现尸体 → corpse.DiscoverByTimeOver()   （立即自动报告，模糊死亡时间）
-    ///   └ 没尸体       → PushAfter(3000, ClearAllMission)（白方胜利结算）
-    /// </code>
-    /// 于是有人会在白任务快满时刀人，借「任务满」把尸体立刻推成已报告。
+    /// 原版链路（0.1.18）：<c>MissionManager.ClearMission</c> → <c>CheckAllClear</c> 置
+    /// <c>AllClear = true</c> → <c>TriggerAllClearEnd()</c>（:169787）：
+    /// 有未发现尸体 → <c>Corpse.DiscoverByTimeOver()</c>；没尸体 →
+    /// <c>PushAfter(3000, ClearAllMission)</c>（白方胜利）。
     /// </para>
     /// <para>
-    /// 本功能：当「距尸体自动报告倒计时」≥ <see cref="ThresholdSeconds"/> 时，
-    /// 把这次报告 + 结算整体推迟 <see cref="DelaySeconds"/> 秒；推迟期间：
-    /// ① 不触发 <c>DiscoverByTimeOver</c>（不报告）；
-    /// ② 不触发 <c>ClearAllMission</c>（白方不结算）；
-    /// ③ 尸体的自动报告时刻 <c>StateList[5]</c> 同步 +delay（倒计时停滞）。
+    /// 本功能只拦 <b>任务满</b> 这一次调用：有未发现尸体且它的自动报告倒计时剩余
+    /// ≥ <c>ThresholdSeconds</c> 时，整体推迟 <c>DelaySeconds</c> 秒再走原版；
+    /// 推迟期间熔毁倒计时冻结（不变大也不变小），给白方多几秒活动时间。
+    /// 手动报告 / 倒计时归零报告等其它进入调查的途径完全不受影响。
     /// </para>
     /// </remarks>
     [PatchFeature(
         "ClueMissionReportDelay",
-        "白方任务满时，若距尸体自动报告还有 ≥阈值秒，则把报告与白方结算推迟 N 秒（倒计时同步停滞）。",
+        "白方任务满时：若已有未发现尸体、且它的自动报告倒计时剩余 ≥ 阈值，\n" +
+        "把「报告尸体 + 白方结算」整体推迟 N 秒；推迟期间熔毁倒计时冻结（不变大也不变小），\n" +
+        "给白方多 N 秒活动时间。5 秒后恢复原版流程。手动报告与其它进入调查的途径不受影响。\n" +
+        "阈值与延时可热调。",
         defaultEnabled: false,
         side: FeatureSide.Host)]
     internal partial class MissionReportDelayFeature
@@ -39,7 +34,7 @@ namespace ClueDetail.Features.Host.MissionReportDelay
         /// <summary>推迟秒数。</summary>
         public static ConfigEntry<int> DelaySeconds { get; private set; }
 
-        /// <summary>只有剩余倒计时 ≥ 该值才推迟（秒）。</summary>
+        /// <summary>只有尸体自动报告倒计时剩余 ≥ 该值才推迟（秒）。</summary>
         public static ConfigEntry<int> ThresholdSeconds { get; private set; }
 
         public static void Bind(ConfigFile config, string section)
@@ -48,17 +43,41 @@ namespace ClueDetail.Features.Host.MissionReportDelay
                 section,
                 "DelaySeconds",
                 5,
-                "任务满时的报告 + 结算推迟多少秒（1–30）。");
+                new ConfigDescription(
+                    "任务满时的报告 + 结算推迟多少秒。\n" +
+                    "推迟期间熔毁倒计时冻结，给白方多这么多秒活动时间。允许 1–30。",
+                    new AcceptableValueRange<int>(1, 30)));
 
             ThresholdSeconds = config.Bind(
                 section,
                 "ThresholdSeconds",
                 40,
-                "尸体自动报告倒计时剩余 ≥ 该值（秒）才推迟；小于它按原版立即报告。");
+                new ConfigDescription(
+                    "尸体自动报告倒计时剩余 ≥ 该值（秒）才推迟；小于它按原版立即报告。\n" +
+                    "默认 40（尸体自动报告窗口是 50–70 秒）。允许 0–120。",
+                    new AcceptableValueRange<int>(0, 120)));
         }
 
-        internal static int DelayValue => DelaySeconds != null ? DelaySeconds.Value : 5;
+        internal static int DelayValue =>
+            DelaySeconds == null ? 5 : Math.Clamp(DelaySeconds.Value, 1, 30);
 
-        internal static int ThresholdValue => ThresholdSeconds != null ? ThresholdSeconds.Value : 40;
+        internal static int ThresholdValue =>
+            ThresholdSeconds == null ? 40 : Math.Clamp(ThresholdSeconds.Value, 0, 120);
+
+        /// <summary>启动时自检反射目标；与开关状态无关。</summary>
+        public static void OnLoaded()
+        {
+            ResolveReflection();
+            if (!_broken)
+            {
+                global::ClueDetail.Core.Log.Info("任务报告延迟：反射目标齐全（TriggerAllClearEnd / AllClear / RemainTime）。");
+            }
+        }
+
+        /// <summary>热关：若正处在推迟中，立即补走原版，避免 AllClear 停摆导致卡局。</summary>
+        public static void OnDisabled()
+        {
+            Reset(true);
+        }
     }
 }

@@ -26,6 +26,21 @@
 说明补丁目标都没失效）。新版 dump 的用途是**查新增功能**，不是替换旧行号 —— 两者行数不同
 （170692 vs 183351），行号不能混用。
 
+**2026-11-02 复核（当前安装）**：
+
+| 项 | 值 |
+| --- | --- |
+| `Assembly-CSharp.dll` 文件时间 | 2026-10-26 13:08:20 |
+| 大小 | 2,838,016 字节 |
+| MVID | `baf64ef4-e6fb-4b89-b45c-3913dcfd481a` |
+| SHA256 | `91E789EA8EF30D00F8C5D714FADFEFBEB838AD981640FFC04389870F931D12B5` |
+| 反编译转储 | `.tmps\decomp\Assembly-CSharp-0.1.18.decompiled.cs`（4,840,172 字节） |
+
+当前安装 DLL 与 0.1.18 转储**逐字节一致**（转储 SHA256
+`43D82256A1672631A38C3C1B8595DB3067CEEED89D41D403CDEFC8DA0759E675`）。
+2026-10-23 的 `da5eed19…` 是那次临时更新的构建；当前安装已回到 `baf64ef4…` 的 0.1.18 形状，
+行号锚点继续按下表使用。
+
 ⚠️ 判断基准是否还成立，**最快的办法是重跑 `tools/check-targets.ps1`** ——
 它直接读游戏 DLL 逐个验证补丁目标存在，PASS 就说明行号锚点仍然有效（比对比 MVID 更直接）。
 
@@ -77,6 +92,50 @@
 | `ClueManager.Clue.CompareTo` | 27536-27539 | 客户端线索按 `Time` 排序（冻结时间会改变顺序，已接受） |
 | `Server.Game.Player.InteractLock` | 178386 | 交互锁 500ms（`DeviceManager.Interact` 静默丢弃期间的重发） |
 
+
+## 11. 任务满报告延迟 / 两次选人（2026-11-02）
+
+> 机制、阶段图与实测清单见 `docs/任务满报告延迟与两次选人.md`。
+
+### 11.1 任务满报告延迟
+
+| 目标 | 行号 | 用途 |
+| --- | --- | --- |
+| `MissionManager.TriggerAllClearEnd()`（private，internal 类型） | 169787 | 唯一拦截点：报告尸体 / 白方胜利 |
+| `MissionManager.Instance` / `.AllClear` | 169152 / 169168 | 反射读任务满状态 |
+| `GameRoom.FindOldestUndiscoveredCorpse()` | 174404 | 取最老未发现尸体 |
+| `Corpse.DiscoverByTimeOver()` | 171977 | 原版报告 |
+| `Corpse.DeviceInfo`（继承自 `Server.Game.Device`）/ `StateList[5]` | — | 自动报告剩余 |
+| `GameRoom.SurvivalTick()` | 174298 | `AllClear` 后直接 return，倒计时天然停住 |
+| `TimeManager.UpdateRemainTime(float)` | 181703 | 推迟期间冻结倒计时 |
+| `TimeManager.TickSurvive()` | 181688 | 冻结兜底 |
+| `TimeManager.ResetSurvival()` | 181784 | 换局复位 |
+| `GameRoom.ChangeGameState(EGameState, EGameState)` | 173057 | 阶段切换复位（手动报告） |
+| `GameRoom.FullReset()` | 172984 | 房间复位 |
+| `GameRoom.PushAfter(int, Action)` | `Server.Game.JobSerializer` 扩展方法 | 推迟 job |
+
+### 11.2 两次选人
+
+| 目标 | 行号 | 用途 |
+| --- | --- | --- |
+| `GameRoom.PickCharacter(Player, int)` | 174189 | 模型阶段放行 / 技能阶段截住 |
+| `GameRoom.PickCharacterTick()` | 174091 | 40 秒强制分配 / 技能超时 |
+| `GameRoom.CheckPickAllDone()`（private） | 174241 | 压住原版提前收尾 |
+| `GameRoom.CancelPickCharacter(Player)` | 174249 | 技能阶段禁止取消 |
+| `GameRoom.StartPick()`（private） | 174064 | 新一轮复位 |
+| `GameRoom.EnterPlayer(Player)`（private） | 175243 | 技能阶段中途加入 |
+| `GameRoom.HandleLeavePlayer(HostPeerSession, Player, bool)` | 173958 | 离场释放技能 |
+| `GameRoom.Broadcast(IMessage, int)` | 174880 | 只拦模型阶段 40 秒的 `S_TIME{0}` |
+| `TimeManager.SetStopWatch(int)` / `.StopWatch` / `.RemainTime` | 181712 / 181672 / 181670 | 技能阶段倒计时 |
+| `SkillComponent.AllocateSkill(CharacterData)` | 180207 | 装技能（含 `ChangeSkill` / buff / `SkillState`） |
+| `SkillComponent.DeallocateSkill()` | 180282 | 释放默认技能 / 旧 buff |
+| `SkillComponent.UseRuleBreaker(int)`（private） | 180672 | 复制目标实际技能 |
+| `UI_PickPopup.PickCharacter(S_PICK_CHARACTER)` | 65295 | `PlayerId=0` 只变灰；`PlayerId=自己` 锁提交/回头像 |
+| `UI_PickPopup.CancelPickCharacter(S_CANCEL_PICK_CHARACTER)` | 65330 | `PlayerId=0` 只点亮；`PlayerId=自己` 复位提交/清头像 |
+| `UI_PickPopup.SetTime(int)` | 65363 | `time<=0` 时 `_pickClosed=true`，按钮永久隐藏 |
+| `UI_PickPopup.OnEnable()` | 65390 | 客户端首次打开时的完整重置（服务端无法直接调） |
+| `UI_PickSubItem.Pick(int)` / `.RefreshUI()` | 88819 / 88826 | 变灰 / 点亮 |
+| `Server.Game.Player.IsDummy` / `.IsSpectator` / `.OwnedCharacterIds` | — | 非参与者判定 / 随机候选优先级 |
 
 `Core/LocalizationData.cs` 是**生成文件**（46 条词条 × 5 语言），
 来源 `.tmps/gamedata/TextData.json`（0.1.16b 基线），不要手改。

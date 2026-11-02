@@ -153,6 +153,7 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 | prefab / bundle 的坑与节点真相 | `docs/prefab与bundle.md` |
 | **彩蛋：尸体撒花**：四层判定、`Corpse.RoomID` 恒 0、`CompositeCollider2D` 陷阱、离线模拟手法 | `docs/彩蛋撒花.md` |
 | **回放时间线**：红色 `--:--` 的四条件、隐藏窗口只有 3 个点、`IsRegular` 硬编码 10、20 分钟录制的影响 | `docs/回放时间线.md` |
+| **任务满报告延迟 + 两次选人**：拦截收口、倒计时冻结、两阶段全局重置、匿名先到先得、中途加入边界 | `docs/任务满报告延迟与两次选人.md` |
 | 一次性调查、被证伪的方案、脚本 | `D:\git\DT_Tools\.tmps\`（**不进任何仓库**） |
 
 ## 5. 游戏 API 锚点（0.1.18）→ `docs/游戏API锚点.md`
@@ -402,6 +403,24 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
     - 挂点：`TimeManager.ResetSurvival`（每局复位标记）、`GameRoom.SurvivalTick`（进入 Survive 后铺一次）。
     - ⚠️ 物品 1059–1064 不在 `data/ItemData.txt` 里，但钓鱼系统确实会产出
       （`Fishing.HandleEvent` :168554-168565，`CreateAndInsertInven`）—— **不要拿 ItemData 表判断"物品不存在"**。
+24. **任务满报告延迟 + 两次选人**（2026-11-02，待实机）：
+    - `Features/Host/MissionReportDelay/`（段 `ClueMissionReportDelay`，默认关闭）：只拦
+      `MissionManager.TriggerAllClearEnd`（:169787）；无尸体 / 剩余 `<` 阈值走原版；有尸体且
+      剩余 `>=` 阈值时推迟 `DelaySeconds`（默认 5）并冻结 `RemainTime`
+      （`UpdateRemainTime` / `TickSurvive` 双保险）。手动报告 / 阶段切换 / 换局 / 热关都收尾；
+      热关时若仍在推迟，立即补走原版，避免 `AllClear` 停摆卡局。
+      配置 `DelaySeconds`（1–30）、`ThresholdSeconds`（0–120，默认 40）。
+    - `Features/Host/PickSkill/`（段 `CluePickSkill`，默认关闭）：模型阶段完全走原版
+      （40 秒、随机 `-2`、强制分配），压 `CheckPickAllDone`；进入技能阶段时服务端释放所有人的
+      默认技能，对每个已选模型**全局广播** `S_CANCEL_PICK_CHARACTER` 完全重置界面，再给
+      `SkillPickSeconds`（默认 20，5–40）独立倒计时。技能先到先得、匿名
+      （`S_PICK_CHARACTER{PlayerId=0}`）；选自己模型 = 保留默认；被占则随机兜底。
+      只做全局广播，**不做“只对单个客户端成立”的伪造状态**。
+      `RuleBreaker` 改为复制目标实际技能。
+    - 中途加入：原版非 `Lobby` 阶段加入的人本来就是旁观者；我们只做全局防御
+      （撤销默认技能、加进 `_pickPlayers` 防原版强制分配、锁定 / 收尾补技能），
+      **不主动踢人**，也不依赖“选人阶段不会有人加入”这个前提。
+    - 机制、锚点、实测清单：`docs/任务满报告延迟与两次选人.md`。
 ### 搁置（等用户决策，2026-10-20）
 
 - **头像与「某人」文本无法同时在纯服务端成立**：`UI_ClueSubItem.FillText`（:86635）

@@ -66,6 +66,20 @@ $targets = @(
     @{ Type = "Server.Game.ItemManager";      Method = "DropItem";               Args = 1; Note = "隐蔽破坏点：拦丢弃" }
     @{ Type = "Server.Game.ItemManager";      Method = "AcquireItem";            Args = 2; Note = "隐蔽破坏点：拦拾取" }
     @{ Type = "Server.Game.GameRoom";         Method = "ChangeGameState";        Args = 1; Note = "隐蔽破坏点：离开 Survive 收尾" }
+    @{ Type = "Server.Game.GameRoom";         Method = "PickCharacter";          Args = 2; Note = "两次选人：模型/技能分流" }
+    @{ Type = "Server.Game.GameRoom";         Method = "PickCharacterTick";      Args = 0; Note = "两次选人：阶段推进/超时兜底" }
+    @{ Type = "Server.Game.GameRoom";         Method = "CheckPickAllDone";       Args = 0; Note = "两次选人：压住原版 40 秒收尾" }
+    @{ Type = "Server.Game.GameRoom";         Method = "CancelPickCharacter";    Args = 1; Note = "两次选人：技能阶段禁止取消" }
+    @{ Type = "Server.Game.GameRoom";         Method = "StartPick";              Args = 0; Note = "两次选人：新一轮复位" }
+    @{ Type = "Server.Game.GameRoom";         Method = "ChangeGameState";        Args = 2; Note = "两次选人：离开选人/换阶段复位" }
+    @{ Type = "Server.Game.GameRoom";         Method = "EnterPlayer";            Args = 1; Note = "两次选人：中途加入处理" }
+    @{ Type = "Server.Game.GameRoom";         Method = "HandleLeavePlayer";      Args = 3; Note = "两次选人：离场释放技能" }
+    @{ Type = "Server.Game.GameRoom";         Method = "FullReset";              Args = 0; Note = "两次选人：房间复位" }
+    @{ Type = "Server.Game.TimeManager";      Method = "ResetSurvival";          Args = 0; Note = "两次选人/任务延迟：换局复位" }
+    @{ Type = "Server.Game.TimeManager";      Method = "UpdateRemainTime";       Args = 1; Note = "任务延迟：冻结倒计时" }
+    @{ Type = "Server.Game.TimeManager";      Method = "TickSurvive";            Args = 0; Note = "任务延迟：冻结倒计时兜底" }
+    @{ Type = "Server.Game.SkillComponent";   Method = "UseRuleBreaker";         Args = 1; Note = "两次选人：复制实际技能" }
+    @{ Type = "Server.Game.MissionManager";   Method = "TriggerAllClearEnd";     Args = 0; Note = "任务延迟：唯一收口" }
 )
 
 # 被引用的成员（非补丁目标，但编译期引用；游戏升级后改名会直接编译失败，这里也顺手核一遍）
@@ -92,6 +106,27 @@ $members = @(
     @{ Type = "ResourceManager";              Member = "Load";          Kind = "M"; Note = "按地址取精灵（活动卡面）" }
     @{ Type = "Managers";                     Member = "Data";          Kind = "P"; Note = "数据表入口（房间类型 → 卡面名）" }
     @{ Type = "Data.RoomData";                Member = "Type";          Kind = "F"; Note = "房间类型（卡面名用它拼）" }
+    @{ Type = "Server.Game.GameRoom";         Member = "FindOldestUndiscoveredCorpse"; Kind = "M"; Note = "任务延迟：最老未发现尸体" }
+    @{ Type = "Server.Game.GameRoom";         Member = "IsMigrating";     Kind = "P"; Note = "任务延迟：迁移期顺延" }
+    @{ Type = "Server.Game.JobSerializer";    Member = "PushAfter";       Kind = "M"; Note = "任务延迟：推迟 job（扩展方法）" }
+    @{ Type = "Server.Game.GameRoom";         Member = "Players";         Kind = "F"; Note = "两次选人：遍历玩家" }
+    @{ Type = "Server.Game.GameRoom";         Member = "State";           Kind = "P"; Note = "两次选人/任务延迟：阶段判定" }
+    @{ Type = "Server.Game.TimeManager";      Member = "RemainTime";      Kind = "P"; Note = "任务延迟：冻结值" }
+    @{ Type = "Server.Game.TimeManager";      Member = "SetStopWatch";    Kind = "M"; Note = "两次选人：技能阶段倒计时" }
+    @{ Type = "Server.Game.TimeManager";      Member = "StopWatch";       Kind = "P"; Note = "两次选人/任务延迟：时间基准" }
+    @{ Type = "Server.Game.Player";           Member = "IsDummy";         Kind = "P"; Note = "两次选人：非参与者判定" }
+    @{ Type = "Server.Game.Player";           Member = "SkillComponent";  Kind = "P"; Note = "两次选人：技能装卸" }
+    @{ Type = "Server.Game.Player";           Member = "PublicInfo";      Kind = "P"; Note = "两次选人：玩家 id / 模型" }
+    @{ Type = "Server.Game.Player";           Member = "OwnedCharacterIds"; Kind = "P"; Note = "两次选人：随机优先级" }
+    @{ Type = "Server.Game.SkillComponent";   Member = "Data";            Kind = "P"; Note = "两次选人：实际技能" }
+    @{ Type = "Server.Game.SkillComponent";   Member = "AllocateSkill";   Kind = "M"; Note = "两次选人：装技能" }
+    @{ Type = "Server.Game.SkillComponent";   Member = "DeallocateSkill"; Kind = "M"; Note = "两次选人：释放默认技能" }
+    @{ Type = "Server.Game.Device";           Member = "DeviceInfo";      Kind = "P"; Note = "任务延迟：Corpse 继承自 Device，StateList[5]" }
+    @{ Type = "Server.Game.Corpse";           Member = "DiscoverByTimeOver"; Kind = "M"; Note = "任务延迟：原版报告" }
+    @{ Type = "DataManager";                  Member = "CharacterDic";    Kind = "P"; Note = "两次选人：角色表" }
+    @{ Type = "DataManager";                  Member = "SkillDic";        Kind = "P"; Note = "两次选人：技能表" }
+    @{ Type = "Util";                         Member = "GetRandomNumber";  Kind = "M"; Note = "两次选人：随机" }
+    @{ Type = "Define";                       Member = "DEFAULT_OWNED_CHARACTER_IDS"; Kind = "F"; Note = "两次选人：默认随机池" }
 )
 
 $fail = 0
