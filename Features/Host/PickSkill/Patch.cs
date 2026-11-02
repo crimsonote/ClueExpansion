@@ -161,7 +161,7 @@ namespace ClueDetail.Features.Host.PickSkill
                 room.Broadcast(new S_PICK_CHARACTER
                 {
                     CharacterId = data.DataId,
-                    PlayerId = 0,
+                    PlayerId = AnonymousValue ? 0 : player.PublicInfo.PlayerId,
                 });
             }
             global::ClueDetail.Core.Log.Info(

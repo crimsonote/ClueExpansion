@@ -41,8 +41,16 @@ namespace ClueDetail.Features.Host.PickSkill
                 "AllowRandom",
                 true,
                 "第二次选择是否允许「随机」（与原版选人一样有两个随机选项）。");
+
+            Anonymous = config.Bind(
+                section,
+                "Anonymous",
+                true,
+                "true = 广播里不暴露是谁（PlayerId 置 0）；false = 与原版一样公开选择。");
         }
 
         internal static bool AllowRandomValue => AllowRandom == null || AllowRandom.Value;
+
+        internal static bool AnonymousValue => Anonymous == null || Anonymous.Value;
     }
 }
