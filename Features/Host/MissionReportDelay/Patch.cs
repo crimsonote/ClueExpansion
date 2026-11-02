@@ -11,11 +11,11 @@ namespace ClueDetail.Features.Host.MissionReportDelay
 {
     internal partial class MissionReportDelayFeature
     {
-        /// <summary>已经推迟过一次，重触发时放行原版（防无限推迟）。</summary>
-        private static bool _delayed;
-
         private static Type _missionManagerType;
         private static MethodInfo _triggerMethod;
+
+        /// <summary>本次推迟已经发生过一次（防无限推迟）。</summary>
+        private static bool _delayed;
 
         /// <summary>
         /// <c>MissionManager.TriggerAllClearEnd</c> 是 private；<c>MissionManager</c> 本身是
@@ -41,8 +41,8 @@ namespace ClueDetail.Features.Host.MissionReportDelay
 
                 try
                 {
-                    // ShouldDelay 返回 true 表示「已经推迟」⇒ Prefix 必须返回 **false** 拦截原版。
-                    return !ShouldDelay();
+                    // Decide 返回 true = 拦截原版，false = 放行。
+                    return Decide();
                 }
                 catch (Exception ex)
                 {
@@ -52,8 +52,8 @@ namespace ClueDetail.Features.Host.MissionReportDelay
             }
         }
 
-        /// <returns>true = 已推迟（拦截原版），false = 放行原版。</returns>
-        private static bool ShouldDelay()
+        /// <returns>true = 拦截原版（本次不做任何事），false = 放行原版。</returns>
+        private static bool Decide()
         {
             ServerGameRoom room = ServerGameRoom.Instance;
             ServerTimeManager tm = ServerTimeManager.Instance;
@@ -62,16 +62,30 @@ namespace ClueDetail.Features.Host.MissionReportDelay
                 return false;
             }
 
+            // ⚠️ 已经不在生存阶段（手动报告了尸体、或别的原因已经进调查/结算）：
+            // 这一次 TriggerAllClearEnd 什么都不该做 —— 既不能报告，也不能判白方胜利。
+            if (room.State != EGameState.Survive)
+            {
+                return true;
+            }
+
+            // 推迟过一次后的重触发：放行原版（否则无限推迟）。
+            if (_delayed)
+            {
+                _delayed = false;
+                return false;
+            }
+
             ServerCorpse corpse = room.FindOldestUndiscoveredCorpse();
             if (corpse == null || corpse.DeviceInfo == null || corpse.DeviceInfo.StateList == null)
             {
-                return false;       // 没尸体 ⇒ 原版直接走白方胜利结算
+                return false;       // 没尸体 ⇒ 原版走白方胜利结算
             }
 
             int reportAt = corpse.DeviceInfo.StateList[5];
             if (reportAt <= 0)
             {
-                return false;       // 没排自动报告 ⇒ 不介入
+                return false;       // 没排自动报告
             }
 
             int remain = reportAt - tm.SurviveTime;
@@ -85,7 +99,7 @@ namespace ClueDetail.Features.Host.MissionReportDelay
             // ① 倒计时停滞：报告时刻整体后移
             corpse.DeviceInfo.StateList[5] = reportAt + delay;
 
-            // ② 推迟 5 秒后重新触发（期间不报告、不结算）
+            // ② 推迟后重新触发
             _delayed = true;
             room.PushAfter(delay * 1000, Retrigger);
 
@@ -100,6 +114,14 @@ namespace ClueDetail.Features.Host.MissionReportDelay
         {
             try
             {
+                ServerGameRoom room = ServerGameRoom.Instance;
+                if (room != null && room.State != EGameState.Survive)
+                {
+                    // 推迟期间已经手动报告 → 走原版的调查流程，这里不再触发任何结算。
+                    _delayed = false;
+                    return;
+                }
+
                 object manager = AccessTools.PropertyGetter(_missionManagerType, "Instance")?.Invoke(null, null);
                 _triggerMethod?.Invoke(manager, null);
             }
