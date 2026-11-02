@@ -156,6 +156,12 @@ namespace ClueDetail.Features.Host.MissionReportDelay
                 return true;
             }
 
+            // 熔毁已经归零：原版下一拍就会结算，不能清 AllClear 去拖。
+            if (tm.RemainTime <= 0f)
+            {
+                return true;
+            }
+
             // 已经不在生存阶段（手动报告等）：绝不能放原版去排 ClearAllMission。
             if (room.State != EGameState.Survive)
             {
@@ -165,6 +171,8 @@ namespace ClueDetail.Features.Host.MissionReportDelay
 
             if (_pending)
             {
+                // 推迟期间必须让 AllClear 保持 false，否则设备/尸体交互会被结束锁挡住。
+                SetAllClear(false);
                 return false;
             }
 
@@ -194,16 +202,32 @@ namespace ClueDetail.Features.Host.MissionReportDelay
                 return true; // 快到了，按原版立即报告
             }
 
-            StartDelay(room, tm, delay, remain, threshold);
+            if (!StartDelay(room, tm, delay, remain, threshold))
+            {
+                return true; // 清结束锁失败 / job 排不上：按原版立即收口
+            }
+
             return false;
         }
 
-        private static void StartDelay(
+        private static bool StartDelay(
             ServerGameRoom room, ServerTimeManager tm, int delay, int remain, int threshold)
         {
             _frozenRemain = tm.RemainTime;
             _freeze = !_freezeBroken;
             _freezeCorrected = false;
+
+            // 关键：推迟期间把“游戏即将结束”的锁摘掉，否则 DeviceManager / Corpse /
+            // SkillComponent 里所有 !AllClear 的交互都会被挡住。到点再恢复。
+            if (!SetAllClear(false))
+            {
+                _freeze = false;
+                _freezeCorrected = false;
+                global::ClueDetail.Core.Log.Error(
+                    "任务报告延迟：无法清除 MissionManager.AllClear，放弃推迟（按原版立即收口）。");
+                return false;
+            }
+
             _pending = true;
 
             try
@@ -215,11 +239,25 @@ namespace ClueDetail.Features.Host.MissionReportDelay
                 global::ClueDetail.Core.Log.Exception(ex, "任务报告延迟：取消旧 job 失败。");
             }
 
-            _job = room.PushAfter(delay * 1000, Retrigger);
+            try
+            {
+                _job = room.PushAfter(delay * 1000, Retrigger);
+            }
+            catch (Exception ex)
+            {
+                global::ClueDetail.Core.Log.Exception(ex, "任务报告延迟：排推迟 job 失败，恢复原版。");
+                _pending = false;
+                _freeze = false;
+                _freezeCorrected = false;
+                SetAllClear(true);
+                return false;
+            }
+
             global::ClueDetail.Core.Log.Info(
                 $"任务报告延迟：白方任务满；最老尸体自动报告剩 {remain} 秒（≥{threshold}），" +
                 $"报告与白方结算推迟 {delay} 秒，倒计时冻结在 {_frozenRemain:F1}" +
                 (_freeze ? "。" : "（冻结不可用）。"));
+            return true;
         }
 
         // ══════════════════ 恢复 ══════════════════
@@ -265,13 +303,6 @@ namespace ClueDetail.Features.Host.MissionReportDelay
                 return;
             }
 
-            if (!IsAllClear())
-            {
-                global::ClueDetail.Core.Log.Warn("任务报告延迟：到点时已不在任务满状态，放弃补发。");
-                Reset(false);
-                return;
-            }
-
             global::ClueDetail.Core.Log.Info("任务报告延迟：推迟到点，恢复原版流程（报告尸体 / 白方结算）。");
             _pending = true;
             InvokeOriginal(room);
@@ -280,6 +311,9 @@ namespace ClueDetail.Features.Host.MissionReportDelay
 
         private static void InvokeOriginal(ServerGameRoom room)
         {
+            // 到点/热关补走原版前，把“结束锁”重新挂上。
+            SetAllClear(true);
+
             object manager = null;
             try
             {
@@ -422,12 +456,6 @@ namespace ClueDetail.Features.Host.MissionReportDelay
                 return;
             }
 
-            if (!IsAllClear())
-            {
-                global::ClueDetail.Core.Log.Info("任务报告延迟：功能关闭时已不在任务满状态，不再补发。");
-                return;
-            }
-
             global::ClueDetail.Core.Log.Info("任务报告延迟：功能被关闭，立即按原版补发报告 / 结算。");
             InvokeOriginal(room);
         }
@@ -436,6 +464,32 @@ namespace ClueDetail.Features.Host.MissionReportDelay
         internal static void OnStateChanged()
         {
             Reset(false);
+        }
+
+        private static bool SetAllClear(bool value)
+        {
+            if (_instanceProp == null || _allClearProp == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                object manager = _instanceProp.GetValue(null);
+                if (manager == null)
+                {
+                    return false;
+                }
+
+                _allClearProp.SetValue(manager, value);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                global::ClueDetail.Core.Log.Exception(
+                    ex, $"任务报告延迟：设置 MissionManager.AllClear = {value} 失败。");
+                return false;
+            }
         }
 
         private static bool IsAllClear()
