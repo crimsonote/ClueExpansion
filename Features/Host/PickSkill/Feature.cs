@@ -34,6 +34,9 @@ namespace ClueDetail.Features.Host.PickSkill
         /// <summary>第二次选择是否允许「随机」。</summary>
         public static ConfigEntry<bool> AllowRandom { get; private set; }
 
+        /// <summary>第二次选择是否匿名（广播里 PlayerId 置 0）。</summary>
+        public static ConfigEntry<bool> Anonymous { get; private set; }
+
         public static void Bind(ConfigFile config, string section)
         {
             AllowRandom = config.Bind(
