@@ -11,6 +11,9 @@ namespace ClueDetail.Features.Host.MissionReportDelay
 {
     internal partial class MissionReportDelayFeature
     {
+        /// <summary>已经推迟过一次，重触发时放行原版（防无限推迟）。</summary>
+        private static bool _delayed;
+
         private static Type _missionManagerType;
         private static MethodInfo _triggerMethod;
 
@@ -82,6 +85,7 @@ namespace ClueDetail.Features.Host.MissionReportDelay
             corpse.DeviceInfo.StateList[5] = reportAt + delay;
 
             // ② 推迟 5 秒后重新触发（期间不报告、不结算）
+            _delayed = true;
             room.PushAfter(delay * 1000, Retrigger);
 
             global::ClueDetail.Core.Log.Info(
