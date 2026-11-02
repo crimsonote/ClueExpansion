@@ -740,9 +740,8 @@ namespace ClueDetail.Features.Host.PickSkill
                 || IsSkillTaken(data.Skill))
             {
                 global::ClueDetail.Core.Log.Info(
-                    $"两次选人：{NameOf(player)} 选择的 {characterId} 不可用（不存在/不可选/技能缺失/已被占用），改为随机。");
-                ApplyRandomSkill(player);
-                MaybeComplete();
+                    $"两次选人：{NameOf(player)} 选择的 {characterId} 无效或已被占用，已退回未选（不随机）。");
+                RevertSkillPick(player);
                 return;
             }
 
@@ -753,9 +752,51 @@ namespace ClueDetail.Features.Host.PickSkill
             }
 
             global::ClueDetail.Core.Log.Warn(
-                $"两次选人：{NameOf(player)} 应用 {characterId} 失败，改为随机。");
-            ApplyRandomSkill(player);
-            MaybeComplete();
+                $"两次选人：{NameOf(player)} 应用 {characterId} 失败，已退回未选（不随机）。");
+            RevertSkillPick(player);
+        }
+
+        /// <summary>
+        /// 失败的选择退回“未选”：清掉可能装了一半的技能，并广播
+        /// <c>S_CANCEL{PlayerId=自己, CharacterId=-2}</c> 复位自己的提交/高亮。
+        /// 不占用技能、不随机；玩家可以重新选。
+        /// </summary>
+        private static void RevertSkillPick(ServerGamePlayer player)
+        {
+            if (player?.PublicInfo == null)
+            {
+                return;
+            }
+
+            int pid = player.PublicInfo.PlayerId;
+            SkillSource.Remove(pid);
+
+            try
+            {
+                player.SkillComponent?.DeallocateSkill();
+            }
+            catch (Exception ex)
+            {
+                global::ClueDetail.Core.Log.Exception(
+                    ex, $"两次选人：回退 {NameOf(player)} 的选择时清理技能失败。");
+            }
+
+            ServerGameRoom room = ServerGameRoom.Instance;
+            if (room != null)
+            {
+                try
+                {
+                    room.Broadcast(new S_CANCEL_PICK_CHARACTER
+                    {
+                        PlayerId = pid,
+                        CharacterId = -2,
+                    });
+                }
+                catch (Exception ex)
+                {
+                    global::ClueDetail.Core.Log.Exception(ex, "两次选人：广播回退选择失败。");
+                }
+            }
         }
 
         /// <summary>给参与者随机一个未占用的技能；没有空闲时回退到自己的模型默认。</summary>
