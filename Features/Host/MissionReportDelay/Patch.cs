@@ -41,7 +41,8 @@ namespace ClueDetail.Features.Host.MissionReportDelay
 
                 try
                 {
-                    return ShouldDelay();
+                    // ShouldDelay 返回 true 表示「已经推迟」⇒ Prefix 必须返回 **false** 拦截原版。
+                    return !ShouldDelay();
                 }
                 catch (Exception ex)
                 {
