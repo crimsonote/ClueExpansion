@@ -201,6 +201,64 @@ namespace ClueDetail.Features.Host.GameChat
 
             return null;
         }
+        /// <summary>
+        /// /skill [角色名|random]：把技能换成该角色的技能，模型不变（实验性）。
+        /// </summary>
+        /// <remarks>
+        /// 机制：<c>CharacterData.Skill</c> 只是「默认技能」，玩家实际技能由
+        /// <c>Player.SkillComponent.Data</c> 决定（0.1.18c :177028）。服务端调
+        /// <c>AllocateSkill</c> 换掉它，并只向本人 <c>SendChangeSkill</c> —— 别人看不到，天然匿名。
+        /// </remarks>
+        private static void CmdSkill(ServerGameRoom room, ServerGamePlayer player, string arg)
+        {
+            if (room.State != EGameState.PickCharacter && room.State != EGameState.Lobby)
+            {
+                Reply(room, player, "/skill 只能在选人阶段使用。");
+                return;
+            }
+
+            string key = arg.Trim();
+            if (key.Length == 0)
+            {
+                Reply(room, player, "用法：/skill <角色名|random>（模型不变，只换技能）");
+                return;
+            }
+
+            Data.CharacterData data = null;
+            if (key == "random" || key == "随机")
+            {
+                var list = new List<Data.CharacterData>();
+                foreach (var c in Managers.Data.CharacterDic.Values)
+                {
+                    list.Add(c);
+                }
+
+                if (list.Count > 0)
+                {
+                    data = list[new global::System.Random().Next(list.Count)];
+                }
+            }
+            else
+            {
+                foreach (var c in Managers.Data.CharacterDic.Values)
+                {
+                    if (c != null && c.Name == key)
+                    {
+                        data = c;
+                        break;
+                    }
+                }
+            }
+
+            if (data == null)
+            {
+                Reply(room, player, $"找不到角色「{key}」。");
+                return;
+            }
+
+            player.SkillComponent.AllocateSkill(data);
+            Reply(room, player, $"技能已切换为「{data.Skill}」，仅你可见。");
+        }
         /// <summary>按昵称（模糊）或座位号找玩家。</summary>
         private static ServerGamePlayer FindTarget(ServerGameRoom room, string who)
         {
