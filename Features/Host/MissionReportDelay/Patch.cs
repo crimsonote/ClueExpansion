@@ -13,14 +13,13 @@ namespace ClueDetail.Features.Host.MissionReportDelay
     {
         private static Type _missionManagerType;
         private static MethodInfo _triggerMethod;
+        private static PropertyInfo _remainProp;
 
         /// <summary>本次推迟已经发生过一次（防无限推迟）。</summary>
         private static bool _delayed;
 
-        /// <summary>推迟期间由我们按下的暂停（退出时恢复原值）。</summary>
-        private static bool _pausedByUs;
-
-        private static bool _prevPaused;
+        /// <summary>推迟期间冻结融毁倒计时（只冻 RemainTime，其它照常）。</summary>
+        private static bool _freezeRemain;
 
         /// <summary>
         /// <c>MissionManager.TriggerAllClearEnd</c> 是 private；<c>MissionManager</c> 本身是
@@ -101,41 +100,17 @@ namespace ClueDetail.Features.Host.MissionReportDelay
                 return false;       // 快到了，按原版立即报告
             }
 
-
-            // ② 推迟后重新触发
-            // 推迟期间冻结融毁倒计时：原版 SurvivalTick 见到 Paused 只重排、不 Tick，
-            // SurviveTime / RemainTime 都不动 ⇒ 尸体倒计时 job 也一起停。
-            _prevPaused = tm.Paused;
-            if (!tm.Paused)
-            {
-                tm.Paused = true;
-                _pausedByUs = true;
-            }
+            // 只冻结融毁倒计时：别的（SurviveTime、玩家 tick、尸体 job）照常走。
+            _freezeRemain = true;
 
             _delayed = true;
             room.PushAfter(delay * 1000, Retrigger);
 
             global::ClueDetail.Core.Log.Info(
                 $"任务报告延迟：尸体自动报告剩 {remain} 秒（≥{threshold}），" +
-                $"报告与白方结算推迟 {delay} 秒。");
+                $"报告与白方结算推迟 {delay} 秒（融毁倒计时同步冻结）。");
 
             return true;            // 拦截原版
-        }
-
-        /// <summary>把推迟期间按下的暂停恢复成原值（无论走哪条分支都要调）。</summary>
-        private static void ResumeTime()
-        {
-            if (!_pausedByUs)
-            {
-                return;
-            }
-
-            _pausedByUs = false;
-            ServerTimeManager tm = ServerTimeManager.Instance;
-            if (tm != null)
-            {
-                tm.Paused = _prevPaused;
-            }
         }
 
         private static void Retrigger()
@@ -158,6 +133,42 @@ namespace ClueDetail.Features.Host.MissionReportDelay
             catch (Exception ex)
             {
                 global::ClueDetail.Core.Log.Exception(ex, "任务报告延迟：重新触发失败。");
+            }
+        }
+
+        /// <summary>解除融毁倒计时冻结（无论走哪条分支都要调）。</summary>
+        private static void ResumeTime()
+        {
+            _freezeRemain = false;
+        }
+
+        /// <summary>
+        /// 只冻融毁倒计时：原版 <c>TickSurvive</c> 每秒 <c>RemainTime -= 1</c>，
+        /// 冻结时把这一秒加回去；<c>SurviveTime</c> 不动，所以尸体 job、玩家 tick 都照常。
+        /// </summary>
+        [HarmonyPatch(typeof(ServerTimeManager), "TickSurvive")]
+        internal static class FreezeRemainHook
+        {
+            [HarmonyPostfix]
+            private static void Postfix(ServerTimeManager __instance)
+            {
+                if (!FeatureLoader.Enabled<MissionReportDelayFeature>()) return;
+                if (!_freezeRemain) return;
+
+                try
+                {
+                    if (_remainProp == null)
+                    {
+                        _remainProp = AccessTools.Property(typeof(ServerTimeManager), "RemainTime");
+                    }
+
+                    MethodInfo setter = _remainProp?.GetSetMethod(true);
+                    setter?.Invoke(__instance, new object[] { __instance.RemainTime + 1f });
+                }
+                catch (Exception ex)
+                {
+                    global::ClueDetail.Core.Log.Exception(ex, "任务报告延迟：冻结融毁倒计时失败。");
+                }
             }
         }
     }
