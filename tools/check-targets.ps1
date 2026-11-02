@@ -73,7 +73,6 @@ $targets = @(
     @{ Type = "Server.Game.GameRoom";         Method = "StartPick";              Args = 0; Note = "两次选人：新一轮复位" }
     @{ Type = "Server.Game.GameRoom";         Method = "ChangeGameState";        Args = 2; Note = "两次选人：离开选人/换阶段复位" }
     @{ Type = "Server.Game.GameRoom";         Method = "EnterPlayer";            Args = 1; Note = "两次选人：中途加入处理" }
-    @{ Type = "Server.Game.GameRoom";         Method = "HandleLeavePlayer";      Args = 3; Note = "两次选人：离场释放技能" }
     @{ Type = "Server.Game.GameRoom";         Method = "FullReset";              Args = 0; Note = "两次选人：房间复位" }
     @{ Type = "Server.Game.TimeManager";      Method = "ResetSurvival";          Args = 0; Note = "两次选人/任务延迟：换局复位" }
     @{ Type = "Server.Game.TimeManager";      Method = "UpdateRemainTime";       Args = 1; Note = "任务延迟：冻结倒计时" }
@@ -107,7 +106,7 @@ $members = @(
     @{ Type = "Managers";                     Member = "Data";          Kind = "P"; Note = "数据表入口（房间类型 → 卡面名）" }
     @{ Type = "Data.RoomData";                Member = "Type";          Kind = "F"; Note = "房间类型（卡面名用它拼）" }
     @{ Type = "Server.Game.GameRoom";         Member = "FindOldestUndiscoveredCorpse"; Kind = "M"; Note = "任务延迟：最老未发现尸体" }
-    @{ Type = "Server.Game.GameRoom";         Member = "IsMigrating";     Kind = "P"; Note = "任务延迟：迁移期顺延" }
+    @{ Type = "Server.Game.GameRoom";         Member = "PickRandomOwnedCharacter"; Kind = "M"; Note = "两次选人：提前揭晓随机模型" }
     @{ Type = "Server.Game.JobSerializer";    Member = "PushAfter";       Kind = "M"; Note = "任务延迟：推迟 job（扩展方法）" }
     @{ Type = "Server.Game.GameRoom";         Member = "Players";         Kind = "F"; Note = "两次选人：遍历玩家" }
     @{ Type = "Server.Game.GameRoom";         Member = "State";           Kind = "P"; Note = "两次选人/任务延迟：阶段判定" }

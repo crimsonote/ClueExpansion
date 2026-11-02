@@ -40,6 +40,9 @@ namespace ClueDetail.Features.Host.PickSkill
         /// <summary>技能阶段选定的技能来源角色。</summary>
         private static readonly Dictionary<int, int> SkillSource = new Dictionary<int, int>();
 
+        /// <summary>技能阶段按了“随机”的人：不占技能，等所有人决定后从剩余技能里分配。</summary>
+        private static readonly HashSet<int> RandomSkillPlayers = new HashSet<int>();
+
         private static bool _broken;
         private static bool _loggedBroken;
         private static bool _completed;
@@ -48,6 +51,8 @@ namespace ClueDetail.Features.Host.PickSkill
         private static FieldInfo _pickPlayersField;
         private static FieldInfo _pickCharactersField;
         private static FieldInfo _randomPickPlayersField;
+        private static MethodInfo _pickRandomOwnedMethod;
+        private static bool _loggedRandomMethodMissing;
 
         // ══════════════════ 反射 ══════════════════
 
@@ -62,6 +67,17 @@ namespace ClueDetail.Features.Host.PickSkill
             _pickPlayersField = AccessTools.Field(type, "_pickPlayers");
             _pickCharactersField = AccessTools.Field(type, "_pickCharacters");
             _randomPickPlayersField = AccessTools.Field(type, "_randomPickPlayers");
+
+            _pickRandomOwnedMethod = AccessTools.Method(
+                type,
+                "PickRandomOwnedCharacter",
+                new[] { typeof(ServerGamePlayer), typeof(HashSet<int>) });
+            if (_pickRandomOwnedMethod == null && !_loggedRandomMethodMissing)
+            {
+                _loggedRandomMethodMissing = true;
+                global::ClueDetail.Core.Log.Warn(
+                    "两次选人：找不到 GameRoom.PickRandomOwnedCharacter；随机模型仍等原版 40 秒揭晓。");
+            }
 
             if (_pickPlayersField == null || _pickCharactersField == null || _randomPickPlayersField == null)
             {
@@ -225,12 +241,6 @@ namespace ClueDetail.Features.Host.PickSkill
                 return false;
             }
 
-            HashSet<int> random = RandomPickPlayers(room);
-            if (random != null && random.Count > 0)
-            {
-                return false;
-            }
-
             foreach (ServerGamePlayer player in room.Players)
             {
                 if (player?.PublicInfo == null || !Model.ContainsKey(player.PublicInfo.PlayerId))
@@ -240,6 +250,94 @@ namespace ClueDetail.Features.Host.PickSkill
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// 原版对随机（<c>-2</c>）只是登记 <c>_randomPickPlayers</c>，真正分配要等 40 秒的
+        /// <c>PickCharacterTick</c>。这里在原版“所有玩家都已决定（具体或随机）”时提前调用原版的
+        /// <c>PickRandomOwnedCharacter</c> 把随机模型揭晓，从而立即进入技能阶段。
+        /// </summary>
+        private static bool TryResolveRandomModels(ServerGameRoom room)
+        {
+            List<int> players = PickPlayers(room);
+            List<int> characters = PickCharacters(room);
+            HashSet<int> random = RandomPickPlayers(room);
+            if (players == null || characters == null || random == null)
+            {
+                return false;
+            }
+
+            // 还有既没选具体模型、也没按随机的人：交给原版 40 秒强制分配。
+            if (players.Count + random.Count < room.Players.Count)
+            {
+                return false;
+            }
+
+            if (random.Count == 0)
+            {
+                return true;
+            }
+
+            if (_pickRandomOwnedMethod == null)
+            {
+                return false;
+            }
+
+            HashSet<int> taken = new HashSet<int>(characters);
+            bool resolved = false;
+            foreach (int pid in random.ToList())
+            {
+                if (players.Contains(pid))
+                {
+                    random.Remove(pid); // 已选具体模型，随机的旧登记作废
+                    continue;
+                }
+
+                ServerGamePlayer player = room.Players.FirstOrDefault(
+                    p => p?.PublicInfo != null && p.PublicInfo.PlayerId == pid);
+                if (player == null)
+                {
+                    random.Remove(pid);
+                    continue;
+                }
+
+                int model;
+                try
+                {
+                    model = (int)_pickRandomOwnedMethod.Invoke(null, new object[] { player, taken });
+                }
+                catch (Exception ex)
+                {
+                    global::ClueDetail.Core.Log.Exception(ex, "两次选人：提前揭晓随机模型失败，等原版 40 秒。");
+                    return false;
+                }
+
+                if (model == 0)
+                {
+                    return false;
+                }
+
+                taken.Add(model);
+                players.Add(pid);
+                characters.Add(model);
+                player.CharacterId = model;
+                Model[pid] = model;
+                room.Broadcast(new S_PICK_CHARACTER
+                {
+                    PlayerId = pid,
+                    CharacterId = model,
+                });
+                random.Remove(pid);
+                resolved = true;
+            }
+
+            if (resolved)
+            {
+                global::ClueDetail.Core.Log.Info(
+                    "两次选人：所有玩家都已决定（含随机），已提前揭晓随机模型并准备进入技能阶段。");
+            }
+
+            return random.Count == 0;
         }
 
         private static void MaybeStartSkillPhase()
@@ -256,6 +354,11 @@ namespace ClueDetail.Features.Host.PickSkill
             }
 
             EnsureModelsRecorded(room);
+            if (!TryResolveRandomModels(room))
+            {
+                return;
+            }
+
             if (!AllModelsConcrete(room))
             {
                 return;
@@ -290,6 +393,7 @@ namespace ClueDetail.Features.Host.PickSkill
             EnsureModelsRecorded(room);
             _stage = Stage.Skill;
             _completed = false;
+            RandomSkillPlayers.Clear();
 
             // 1) 全局撤销默认技能：模型阶段分配的技能只是“暂存”，技能阶段全部回到可竞争状态。
             foreach (ServerGamePlayer player in room.Players)
@@ -355,7 +459,10 @@ namespace ClueDetail.Features.Host.PickSkill
                 $"已释放全部默认技能并重置选人界面，先选先得。");
         }
 
-        /// <summary>技能阶段是否所有人都已选定；是则进入原版 5 秒倒计时。</summary>
+        /// <summary>
+        /// 全员都“已决定”（具体技能 或 随机预留）时完成阶段；
+        /// 若有随机预留，先从剩余技能里分配，再进入原版 5 秒倒计时。
+        /// </summary>
         private static void MaybeComplete()
         {
             if (_broken || _stage != Stage.Skill || _completed)
@@ -369,6 +476,8 @@ namespace ClueDetail.Features.Host.PickSkill
                 return;
             }
 
+            bool allSpecific = true;
+            bool allDecided = true;
             foreach (ServerGamePlayer player in room.Players)
             {
                 if (!IsParticipant(player) || player?.PublicInfo == null)
@@ -376,14 +485,79 @@ namespace ClueDetail.Features.Host.PickSkill
                     continue;
                 }
 
-                if (!SkillSource.ContainsKey(player.PublicInfo.PlayerId))
+                int pid = player.PublicInfo.PlayerId;
+                if (SkillSource.ContainsKey(pid))
                 {
-                    return;
+                    continue;
+                }
+
+                allSpecific = false;
+                if (!RandomSkillPlayers.Contains(pid))
+                {
+                    allDecided = false;
                 }
             }
 
-            // 先标记完成，再补非参与者：这样补的过程中有人刚好加入，
-            // EnterPlayer 的 Postfix 会看到 _completed 并自行补技能，不会漏掉。
+            if (!allSpecific)
+            {
+                if (!allDecided)
+                {
+                    return;
+                }
+
+                ResolveRandomSkills(room);
+
+                // 分配后必须每个人都真的有技能，才允许完成。
+                foreach (ServerGamePlayer player in room.Players)
+                {
+                    if (!IsParticipant(player) || player?.PublicInfo == null)
+                    {
+                        continue;
+                    }
+
+                    if (!SkillSource.ContainsKey(player.PublicInfo.PlayerId))
+                    {
+                        return;
+                    }
+                }
+            }
+
+            FinalizeSkillPhase(room);
+        }
+
+        /// <summary>把随机预留的人从“剩余技能”里分配掉；不占用别人的选择。</summary>
+        private static void ResolveRandomSkills(ServerGameRoom room)
+        {
+            if (RandomSkillPlayers.Count == 0)
+            {
+                return;
+            }
+
+            int count = RandomSkillPlayers.Count;
+            foreach (int pid in RandomSkillPlayers.ToList())
+            {
+                RandomSkillPlayers.Remove(pid);
+                if (SkillSource.ContainsKey(pid))
+                {
+                    continue;
+                }
+
+                ServerGamePlayer player = room.Players.FirstOrDefault(
+                    p => p?.PublicInfo != null && p.PublicInfo.PlayerId == pid);
+                if (player == null || !IsParticipant(player))
+                {
+                    continue;
+                }
+
+                ApplyRandomSkill(player);
+            }
+
+            global::ClueDetail.Core.Log.Info(
+                $"两次选人：所有人已决定，{count} 名随机玩家已从剩余技能里分配。");
+        }
+
+        private static void FinalizeSkillPhase(ServerGameRoom room)
+        {
             _completed = true;
             AssignNonParticipants(room);
             ServerTimeManager.Instance?.SetStopWatch(40);
@@ -423,6 +597,7 @@ namespace ClueDetail.Features.Host.PickSkill
                 count++;
             }
 
+            RandomSkillPlayers.Clear();
             AssignNonParticipants(room);
             global::ClueDetail.Core.Log.Info(
                 $"两次选人：技能阶段到点，{count} 名参与者未选，已从剩余技能随机兜底。");
@@ -471,7 +646,7 @@ namespace ClueDetail.Features.Host.PickSkill
         // ══════════════════ 选人处理 ══════════════════
 
         /// <summary>模型阶段：原版接受一次模型选择后记录；全员就绪则进入技能阶段。</summary>
-        private static void OnModelPicked(ServerGameRoom room, ServerGamePlayer player)
+        private static void OnModelPicked(ServerGameRoom room, ServerGamePlayer player, int characterId)
         {
             if (room == null || player?.PublicInfo == null)
             {
@@ -479,24 +654,27 @@ namespace ClueDetail.Features.Host.PickSkill
             }
 
             int pid = player.PublicInfo.PlayerId;
-            if (Model.ContainsKey(pid))
+
+            // 随机（-2）原版只登记、不分配模型；这里触发 MaybeStart 去提前揭晓。
+            if (characterId == -2)
             {
+                MaybeStartSkillPhase();
                 return;
             }
 
-            List<int> players = PickPlayers(room);
-            if (players == null || !players.Contains(pid))
+            if (!Model.ContainsKey(pid))
             {
-                return;
+                List<int> players = PickPlayers(room);
+                if (players != null && players.Contains(pid))
+                {
+                    int model = player.PublicInfo.CharacterId;
+                    if (model != 0)
+                    {
+                        Model[pid] = model;
+                    }
+                }
             }
 
-            int model = player.PublicInfo.CharacterId;
-            if (model == 0)
-            {
-                return;
-            }
-
-            Model[pid] = model;
             MaybeStartSkillPhase();
         }
 
@@ -519,6 +697,18 @@ namespace ClueDetail.Features.Host.PickSkill
                 return;
             }
 
+            ServerGameRoom room = ServerGameRoom.Instance;
+            if (room == null)
+            {
+                return;
+            }
+
+            if (RandomSkillPlayers.Contains(pid))
+            {
+                // 已按随机；想改具体技能必须先取消随机（和模型阶段一致）。
+                return;
+            }
+
             if (characterId == -2)
             {
                 if (!AllowRandomValue)
@@ -528,7 +718,18 @@ namespace ClueDetail.Features.Host.PickSkill
                     return;
                 }
 
-                ApplyRandomSkill(player);
+                if (RandomSkillPlayers.Add(pid))
+                {
+                    // 只表示“我最后再选”，不占用任何技能；别人仍可任选。
+                    room.Broadcast(new S_PICK_CHARACTER
+                    {
+                        PlayerId = pid,
+                        CharacterId = -2,
+                    });
+                    global::ClueDetail.Core.Log.Info(
+                        $"两次选人：{NameOf(player)} 选择了随机（不占技能，等所有人决定后分配）。");
+                }
+
                 MaybeComplete();
                 return;
             }
@@ -973,6 +1174,7 @@ namespace ClueDetail.Features.Host.PickSkill
             _timeZeroSuppressed = false;
             Model.Clear();
             SkillSource.Clear();
+            RandomSkillPlayers.Clear();
         }
 
         /// <summary>

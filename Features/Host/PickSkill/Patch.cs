@@ -67,7 +67,7 @@ namespace ClueDetail.Features.Host.PickSkill
 
                 try
                 {
-                    OnModelPicked(__instance, player);
+                    OnModelPicked(__instance, player, characterId);
                 }
                 catch (Exception ex)
                 {
@@ -213,8 +213,28 @@ namespace ClueDetail.Features.Host.PickSkill
                 EnsurePhase();
                 if (_broken || _stage != Stage.Skill) return true;
 
+                if (player?.PublicInfo == null || __instance == null)
+                {
+                    return false;
+                }
+
+                int pid = player.PublicInfo.PlayerId;
+                if (RandomSkillPlayers.Remove(pid))
+                {
+                    // 只取消“随机预留”，不碰已选的具体技能。
+                    __instance.Broadcast(new S_CANCEL_PICK_CHARACTER
+                    {
+                        PlayerId = pid,
+                        CharacterId = -2,
+                    });
+                    global::ClueDetail.Core.Log.Info(
+                        $"两次选人：{NameOf(player)} 取消了随机，重新开放选择。");
+                    MaybeComplete();
+                    return false;
+                }
+
                 global::ClueDetail.Core.Log.Info(
-                    $"两次选人：技能阶段忽略 {NameOf(player)} 的取消请求。");
+                    $"两次选人：{NameOf(player)} 已选定具体技能，取消请求被忽略。");
                 return false;
             }
 
