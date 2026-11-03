@@ -375,6 +375,12 @@ namespace ClueDetail.Features.Host.GhostPresence
                     continue;
                 }
 
+                // 真鬼显形可对旁观玩家隐藏：跳过发 S_SPAWN，也不加入 SharedPlayers。
+                if (!target.IsAlive && RevealHideSpectatorsValue && observer.IsSpectator)
+                {
+                    continue;
+                }
+
                 try
                 {
                     if (!target.IsAlive)
@@ -437,6 +443,12 @@ namespace ClueDetail.Features.Host.GhostPresence
             {
                 ServerGamePlayer observer = players[i];
                 if (observer == null || observer == target || observer.Session == null)
+                {
+                    continue;
+                }
+
+                // 与 BroadcastRespawn 同口径：旁观者没收到显形，也不需要收隐匿。
+                if (!target.IsAlive && RevealHideSpectatorsValue && observer.IsSpectator)
                 {
                     continue;
                 }

@@ -368,8 +368,10 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
       另在 `HostPeerSession.Send` 上挂 **S_SPAWN Prefix**：AOI 的 `AddPlayer` 发的 `S_SPAWN`
       会把副本改 `IsGhost=true`（`ref IMessage` 覆写，不额外发包）；`OnAddPlayerSent` 补发前
       也要检查收件人在集合内。配置 `BellRespectAoi`（默认 true），false 才退回旧的全房间实验行为。
-    - **真鬼显形**：每 20–35 秒（`RevealIntervalMin/Max`）在所有人（含调查阶段）视野显形
-      2–4 秒（`RevealDurationMin/Max`），**不改生死**。
+    - **真鬼显形**：每 20–35 秒（`RevealIntervalMin/Max`）在所有人（含调查阶段；旁观者可按配置隐藏）
+      视野显形 2–4 秒（`RevealDurationMin/Max`），**不改生死**。
+      `RevealHideSpectators`（默认 true）= 显形/隐匿都跳过 `IsSpectator`，也不把他们加进
+      `SharedPlayers`；false 才所有人可见。只影响 Reveal，不影响铃铛伪装。
       ⚠️ 显形/隐藏必须走原版 `Player.AddPlayer` / `RemovePlayer`，**不能只发 S_SPAWN**：
       移动包 `Player.Move`（:178959）只经 `BroadcastToPlayerAndObservers`（:180103）发给
       `SharedPlayers`，不发这个集合的话活人看到的永远是显形瞬间的静止位置。

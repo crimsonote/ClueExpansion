@@ -14,7 +14,8 @@ namespace ClueDetail.Features.Host.GhostPresence
     /// <item><b>铃铛伪装</b>：生者手持铃铛（默认 <c>DataId = 3009</c>）时，在**其他人**视野里显示为幽灵；
     /// 本人视角不变。只在生存阶段生效，丢铃铛 / 换手 / 进入调查与审判立即解除。</item>
     /// <item><b>真鬼间歇显形</b>：已死的幽灵每隔一段随机时间，在所有人（含调查阶段）视野里
-    /// 出现 2–4 秒再消失。**不改变生死**，只切 <c>State</c> 与可见性。</item>
+    /// 出现 2–4 秒再消失；可用 <c>RevealHideSpectators</c> 对旁观者隐藏。
+    /// **不改变生死**，只切 <c>State</c> 与可见性。</item>
     /// <item><b>安魂曲</b>：真鬼显形期间，以幽灵位置为中心按三拍一组的节奏听到 <c>HandBellSfx</c>
     /// （范围与铃铛正常声音一致，1120，超出听不到）。</item>
     /// </list>
@@ -47,6 +48,9 @@ namespace ClueDetail.Features.Host.GhostPresence
 
         /// <summary>真鬼间歇显形开关。</summary>
         public static ConfigEntry<bool> Reveal { get; private set; }
+
+        /// <summary>真鬼显形是否对旁观玩家隐藏。</summary>
+        public static ConfigEntry<bool> RevealHideSpectators { get; private set; }
 
         /// <summary>安魂曲开关。</summary>
         public static ConfigEntry<bool> Requiem { get; private set; }
@@ -115,6 +119,14 @@ namespace ClueDetail.Features.Host.GhostPresence
                 true,
                 "真鬼间歇显形：已死的幽灵每隔一段时间在所有人视野中出现几秒。\n" +
                 "不改变生死状态，只切换显示。调查阶段同样生效。");
+
+            RevealHideSpectators = config.Bind(
+                section,
+                "RevealHideSpectators",
+                true,
+                "真鬼显形是否对旁观玩家隐藏。\n" +
+                "true = 旁观者（IsSpectator）收不到显形/隐匿的 S_SPAWN/S_DESPAWN，看不到现身；\n" +
+                "false = 所有人可见（旧行为）。只影响 Reveal，不影响铃铛伪装。");
 
             Requiem = config.Bind(
                 section,
@@ -195,6 +207,10 @@ namespace ClueDetail.Features.Host.GhostPresence
         internal static bool BellRespectAoiValue => BellRespectAoi == null || BellRespectAoi.Value;
 
         internal static bool RevealOn => Reveal == null || Reveal.Value;
+
+        /// <summary>真鬼显形是否跳过旁观玩家（默认 true）。</summary>
+        internal static bool RevealHideSpectatorsValue =>
+            RevealHideSpectators == null || RevealHideSpectators.Value;
 
         internal static bool RequiemOn => Requiem == null || Requiem.Value;
 
