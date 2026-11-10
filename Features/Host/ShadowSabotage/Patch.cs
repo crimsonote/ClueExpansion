@@ -49,6 +49,39 @@ namespace ClueDetail.Features.Host.ShadowSabotage
         }
 
         /// <summary>
+        /// 原版**断电破坏完成**（第 2 台电闸被拉断）：把两个破坏点一起锁到下一次窗口派发。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// 为什么不挂 private 的 <c>Fusebox.DisconnetCable</c>（0.1.18 :165644）：那是同类的
+        /// 小方法，JIT 可能内联导致挂点不生效；而它最后调的
+        /// <c>DeviceManager.ClearFuseboxSabotage</c>（public，:166838）是跨类调用，稳定。
+        /// </para>
+        /// <para>
+        /// 判据用 <c>GetDisconnectFuseCount() &gt;= 2</c>：<c>StartFuseboxSabotage</c> 开头也会
+        /// 调一次 <c>ClearFuseboxSabotage</c>（那时断电数为 0），我们自己拆小熊时也会调一次
+        /// （那时没有断电）—— 只有「断电完成」这一支会命中。
+        /// </para>
+        /// </remarks>
+        [HarmonyPatch(typeof(ServerDeviceManager), nameof(ServerDeviceManager.ClearFuseboxSabotage))]
+        internal static class FuseboxWindowClosedHook
+        {
+            [HarmonyPostfix]
+            private static void Postfix()
+            {
+                if (!FeatureLoader.Enabled<ShadowSabotageFeature>()) return;
+                try
+                {
+                    OnFuseboxDisconnected();
+                }
+                catch (global::System.Exception ex)
+                {
+                    global::ClueDetail.Core.Log.Exception(ex, "破坏点：断电完成后的封锁失败。");
+                }
+            }
+        }
+
+        /// <summary>
         /// 每秒一次的维护（设备保活 + 假主人名单）。
         /// </summary>
         /// <remarks>

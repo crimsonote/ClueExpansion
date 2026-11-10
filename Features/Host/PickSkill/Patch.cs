@@ -200,8 +200,13 @@ namespace ClueDetail.Features.Host.PickSkill
 
         /// <summary>
         /// <c>GameRoom.CancelPickCharacter</c>（0.1.18 :174249）：
-        /// 模型阶段放行原版（并清本项目状态）；技能阶段一律拦下，避免把已选的模型/技能撤掉。
+        /// 模型阶段放行原版（并清本项目状态）；技能阶段整替原方法 ——
+        /// 随机预留可以取消；具体技能在**阶段收尾前**可以取消并放回技能池；已收尾则忽略。
         /// </summary>
+        /// <remarks>
+        /// ⚠️ 不能让原版跑：它会把 <c>player.CharacterId</c> 清 0、解除模型选择
+        /// （:174286-174287），那是模型阶段的口径；技能阶段只应回退技能。
+        /// </remarks>
         [HarmonyPatch(typeof(ServerGameRoom), nameof(ServerGameRoom.CancelPickCharacter))]
         internal static class CancelPickCharacterHook
         {
@@ -233,8 +238,29 @@ namespace ClueDetail.Features.Host.PickSkill
                     return false;
                 }
 
+                if (!IsParticipant(player))
+                {
+                    return false;
+                }
+
+                // 阶段已收尾（所有参与者都已决定、正在走原版 5 秒倒计时）就不再接受取消 ——
+                // 与模型阶段的规则一致（<c>StopWatch &gt;= 40</c> 时原版也拒绝取消，:174260）。
+                ServerTimeManager tm = ServerTimeManager.Instance;
+                if (_completed || tm == null || tm.StopWatch >= 40)
+                {
+                    global::ClueDetail.Core.Log.Info(
+                        $"两次选人：{NameOf(player)} 的技能阶段已收尾，取消请求被忽略。");
+                    return false;
+                }
+
+                if (SkillSource.TryGetValue(pid, out int source) && source != 0)
+                {
+                    ReleaseSkillPick(player, source);
+                    return false;
+                }
+
                 global::ClueDetail.Core.Log.Info(
-                    $"两次选人：{NameOf(player)} 已选定具体技能，取消请求被忽略。");
+                    $"两次选人：{NameOf(player)} 没有已提交的技能，取消请求被忽略。");
                 return false;
             }
 

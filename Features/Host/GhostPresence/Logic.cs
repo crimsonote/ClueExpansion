@@ -222,6 +222,20 @@ namespace ClueDetail.Features.Host.GhostPresence
 
                 int id = ghost.PublicInfo.PlayerId;
 
+                // 观战者默认不纳入显形管理：他们不是本功能的显形对象，对活人永远保持
+                // 原版的不可见（鬼魂之间照旧互相可见，见 BroadcastRespawn 的说明）。
+                // 开关关掉时，若他正处在显形窗口里，立刻收回，不残留半次显形。
+                if (!IsRevealManaged(ghost))
+                {
+                    if (RevealUntil.ContainsKey(id))
+                    {
+                        EndReveal(room, ghost);
+                    }
+
+                    NextRevealAt.Remove(id);
+                    continue;
+                }
+
                 if (!RevealUntil.TryGetValue(id, out float until))
                 {
                     if (!NextRevealAt.TryGetValue(id, out float next))
@@ -247,7 +261,12 @@ namespace ClueDetail.Features.Host.GhostPresence
 
                     // 撤 Hide：客户端 HidePlayer(false) 恢复不透明，AOI 重新纳入，
                     // 同时 StartState(Idle) 会把速度刷回普通值（无妨）。
-                    ghost.State = EPlayerState.Idle;
+                    //
+                    // ⚠️ 只写 PublicInfo.State，**绝不能走 Player.State 属性**：属性的
+                    // BroadcastModifyPlayer（0.1.18 :179963-179978）会把状态变更发给所有
+                    // DeadPlayers；客户端 StartState(Hide) → PlayerStealth(true)（:13889）
+                    // 会把 Ghost 子物体的 SpriteRenderer 一起清成透明 ⇒ 其他鬼魂看不见他。
+                    ghost.PublicInfo.State = EPlayerState.Idle;
                     BroadcastRespawn(room, ghost, true);
                     NextBellAt[id] = now;
                     RequiemBeat[id] = 0;
@@ -257,13 +276,7 @@ namespace ClueDetail.Features.Host.GhostPresence
 
                 if (now >= until)
                 {
-                    RevealUntil.Remove(id);
-                    NextBellAt.Remove(id);
-                    RequiemBeat.Remove(id);
-
-                    // 恢复 Hide：StartState(Hide) 会清空 SharedPlayers 并锁技能。
-                    ghost.State = EPlayerState.Hide;
-                    BroadcastDespawn(room, ghost);
+                    EndReveal(room, ghost);
                     global::ClueDetail.Core.Log.Info($"鬼魂彩蛋：{ghost.Name} 重新隐匿。");
                     continue;
                 }
@@ -278,6 +291,40 @@ namespace ClueDetail.Features.Host.GhostPresence
                     NextBellAt[id] = now + (beat == 0 ? RestGap : BeatGap);
                 }
             }
+        }
+
+        /// <summary>该鬼魂是否属于本功能的显形管理范围。</summary>
+        /// <remarks>
+        /// 观战者（<c>IsSpectator</c>）是 <c>EnterSpectator</c>（0.1.18 :173684-173693）
+        /// 调 <c>MakeSpectatorGhost</c> 造出来的鬼：他们不参与对局，默认也不参与显形。
+        /// 否则显形会经 <c>AddPlayer</c> 把观战者的鬼魂推给活人，原版里活人本不该看见他。
+        /// 开关 <c>RevealSpectatorGhosts</c> 打开后，他们与普通鬼魂一样按间隔显形。
+        /// </remarks>
+        private static bool IsRevealManaged(ServerGamePlayer ghost)
+        {
+            return ghost != null && (!ghost.IsSpectator || RevealSpectatorGhostsValue);
+        }
+
+        /// <summary>结束一次显形：从活人视野收回，状态改回 <c>Hide</c>。</summary>
+        /// <remarks>
+        /// ⚠️ 与显形对称，这里同样只写 <c>PublicInfo.State</c>，不走 <c>State</c> 属性 ——
+        /// <c>BroadcastModifyPlayer</c> 会把 <c>Hide</c> 广播给其他鬼魂，
+        /// 客户端 <c>PlayerStealth(true)</c> 会连 Ghost 子物体一起清透明。
+        /// </remarks>
+        private static void EndReveal(ServerGameRoom room, ServerGamePlayer ghost)
+        {
+            if (ghost == null || ghost.PublicInfo == null)
+            {
+                return;
+            }
+
+            int id = ghost.PublicInfo.PlayerId;
+            RevealUntil.Remove(id);
+            NextBellAt.Remove(id);
+            RequiemBeat.Remove(id);
+
+            ghost.PublicInfo.State = EPlayerState.Hide;
+            BroadcastDespawn(room, ghost);
         }
 
         private static void ClearReveals(ServerGameRoom room)
@@ -302,7 +349,9 @@ namespace ClueDetail.Features.Host.GhostPresence
                     continue;
                 }
 
-                ghost.State = EPlayerState.Hide;
+                // 与显形/隐匿同口径：只写 PublicInfo.State，避免把 Hide 广播给其他鬼魂
+                // （客户端 PlayerStealth(true) 会连 Ghost 子物体一起清透明，见 EndReveal）。
+                ghost.PublicInfo.State = EPlayerState.Hide;
                 BroadcastDespawn(room, ghost);
             }
         }
@@ -329,8 +378,10 @@ namespace ClueDetail.Features.Host.GhostPresence
         /// <b>活人（铃铛伪装）必须遵守原版可见性集合</b>：只发给 <c>target.SharedPlayers</c>
         /// —— 那是「能看到 target 的人」的集合（<c>AddPlayer</c> :178898 / <c>RemovePlayer</c> :178917 维护），
         /// HideAndSeek 的 AOI 也是改它。遍历 <c>room.Players</c> 全体直发会绕过 AOI。
-        /// <b>真鬼显形</b>保持全房间：死者的 <c>SharedPlayers</c> 在死亡时已被清空，
+        /// <b>真鬼显形</b>保持全房间（只算活人）：死者的 <c>SharedPlayers</c> 在死亡时已被清空，
         /// 改成只发集合会让显形永远没人收得到。
+        /// <b>鬼魂侧一个包都不发</b>：鬼魂之间（含观战者）的可见性由原版
+        /// <c>BroadcastToDeadPlayers</c>（<c>Player.Move</c> :178987）维持，本功能绝不干涉。
         /// </remarks>
         private static void BroadcastRespawn(ServerGameRoom room, ServerGamePlayer target, bool asGhost)
         {
@@ -375,8 +426,8 @@ namespace ClueDetail.Features.Host.GhostPresence
                     continue;
                 }
 
-                // 真鬼显形可对旁观玩家隐藏：跳过发 S_SPAWN，也不加入 SharedPlayers。
-                if (!target.IsAlive && RevealHideSpectatorsValue && observer.IsSpectator)
+                // 鬼魂永远看得见鬼魂（含观战者）：目标已死时，对死者（含观战者）一个包都不发。
+                if (!target.IsAlive && !observer.IsAlive)
                 {
                     continue;
                 }
@@ -410,7 +461,7 @@ namespace ClueDetail.Features.Host.GhostPresence
                 return;
             }
 
-            // 活人走可见性集合（与 BroadcastRespawn 同口径）；真鬼显形保持全房间。
+            // 活人走可见性集合（与 BroadcastRespawn 同口径）；真鬼显形保持全房间（只算活人）。
             if (target.IsAlive && BellRespectAoiValue)
             {
                 foreach (ServerGamePlayer observer in target.SharedPlayers)
@@ -447,8 +498,9 @@ namespace ClueDetail.Features.Host.GhostPresence
                     continue;
                 }
 
-                // 与 BroadcastRespawn 同口径：旁观者没收到显形，也不需要收隐匿。
-                if (!target.IsAlive && RevealHideSpectatorsValue && observer.IsSpectator)
+                // 与 BroadcastRespawn 同口径：目标已死时，对死者（含观战者）一个包都不发，
+                // 鬼魂之间始终互相可见。
+                if (!target.IsAlive && !observer.IsAlive)
                 {
                     continue;
                 }

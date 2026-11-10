@@ -1315,6 +1315,42 @@ namespace ClueDetail.Features.Host.ShadowSabotage
         }
 
         /// <summary>
+        /// 原版**断电破坏完成**（第 2 台电闸被拉断）时的收口：把两个破坏点一起锁到下一次窗口派发。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// 口径（2026-11-03 用户定案）：小熊与电闸共用同一个「可破坏窗口」——
+        /// 窗口在 <see cref="ServerDeviceManager.StartFuseboxSabotage"/>（0.1.18 :166828）开，
+        /// **断电破坏完成**时由原版自己 <c>ClearFuseboxSabotage()</c> 关（<c>Fusebox.DisconnetCable</c>
+        /// :165659-165661，第 2 台拉断那一支）。
+        /// </para>
+        /// <para>
+        /// 旧行为只做了「小熊被破坏 ⇒ 关电闸窗口」这一个方向：断电完成不会回写小熊的
+        /// <see cref="BreakerState.CanBreak"/>，于是黑幕可以在同一轮里**既断电又拆小熊**
+        /// （2026-11-03 用户报告）。这里补上反方向，封锁口径与 <c>OnStateChanged</c> 完全一致。
+        /// </para>
+        /// <para>
+        /// 进行中的破坏会话不在这里硬收：<see cref="ScheduleBar"/> 每 100ms 自校验，
+        /// <see cref="CanOperate"/> 不成立时会 <c>AbortSession</c> 并保留进度（与离开半径同一套收尾）。
+        /// </para>
+        /// </remarks>
+        internal static void OnFuseboxDisconnected()
+        {
+            var dm = ServerDeviceManager.Instance;
+            if (dm == null || dm.GetDisconnectFuseCount() < 2)
+            {
+                return;
+            }
+
+            LockAllBreakers();
+            SendAllPins(false);
+
+            global::ClueDetail.Core.Log.Info(
+                $"破坏点：原版断电破坏完成（{dm.GetDisconnectFuseCount()} 台电闸已断），" +
+                "两个破坏点一并封锁到下一次窗口派发。");
+        }
+
+        /// <summary>
         /// 破坏结束后起 <see cref="ReloadSeconds"/> 秒 CD，到点重新派发破坏窗口。
         /// </summary>
         /// <remarks>

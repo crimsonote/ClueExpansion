@@ -799,6 +799,70 @@ namespace ClueDetail.Features.Host.PickSkill
             }
         }
 
+        /// <summary>
+        /// 技能阶段取消已选的具体技能：释放技能、把对应角色格子重新点亮、复位本人的提交态。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// 客户端入口本来就有：选完具体技能后，提交按钮的文字会变成「取消」
+        /// （客户端 <c>UI_PickPopup.PickCharacter</c> 0.1.18 :65324），按它发
+        /// <c>C_CANCEL_PICK_CHARACTER</c>（:65442）。
+        /// </para>
+        /// <para>
+        /// ⚠️ 不能放原版 <c>GameRoom.CancelPickCharacter</c>（:174249）跑：它会
+        /// <c>player.SkillComponent.DeallocateSkill()</c> 之后又把 <c>player.CharacterId</c> 清 0、
+        /// 解除模型选择（:174286-174287），那是模型阶段的口径；技能阶段只回退技能，模型必须留着。
+        /// </para>
+        /// <para>
+        /// 释放后该技能立刻回到公共池（先到先得语义的自然结果）：别人可能在你重选之前抢走。
+        /// 取消不改变阶段完成度，所以这里不调 <see cref="MaybeComplete"/>。
+        /// </para>
+        /// </remarks>
+        private static void ReleaseSkillPick(ServerGamePlayer player, int source)
+        {
+            int pid = player.PublicInfo.PlayerId;
+            SkillSource.Remove(pid);
+
+            try
+            {
+                player.SkillComponent?.DeallocateSkill();
+            }
+            catch (Exception ex)
+            {
+                global::ClueDetail.Core.Log.Exception(
+                    ex, $"两次选人：取消 {NameOf(player)} 的技能时清理失败。");
+            }
+
+            ServerGameRoom room = ServerGameRoom.Instance;
+            if (room == null)
+            {
+                return;
+            }
+
+            try
+            {
+                // 本人复位：_submit=false、_currentPick=-1、按钮回到「选择」。
+                // CharacterId = -2 ⇒ 客户端不动任何格子，格子由下面那一步统一点亮。
+                room.Broadcast(new S_CANCEL_PICK_CHARACTER
+                {
+                    PlayerId = pid,
+                    CharacterId = -2,
+                });
+
+                if (TryChar(source, out Data.CharacterData data))
+                {
+                    BroadcastSkillFreed(data.Skill);
+                }
+            }
+            catch (Exception ex)
+            {
+                global::ClueDetail.Core.Log.Exception(ex, "两次选人：广播取消技能失败。");
+            }
+
+            global::ClueDetail.Core.Log.Info(
+                $"两次选人：{NameOf(player)} 取消技能（来源角色 {source}），已放回技能池，可重新选择。");
+        }
+
         /// <summary>给参与者随机一个未占用的技能；没有空闲时回退到自己的模型默认。</summary>
         private static void ApplyRandomSkill(ServerGamePlayer player)
         {
@@ -1049,6 +1113,44 @@ namespace ClueDetail.Features.Host.PickSkill
             catch (Exception ex)
             {
                 global::ClueDetail.Core.Log.Exception(ex, "两次选人：广播技能占用失败。");
+            }
+        }
+
+        /// <summary>
+        /// 与 <see cref="BroadcastSkillTaken"/> 对称：技能被放回池中，所有技能相同的角色格子重新点亮。
+        /// </summary>
+        /// <remarks>
+        /// 用 <c>S_CANCEL_PICK_CHARACTER { PlayerId = 0 }</c>：<c>PlayerId = 0</c> 永不等于真实玩家
+        /// （玩家 id 从 1 起），客户端只会走 <c>UI_PickSubItem.RefreshUI()</c>（:88826）
+        /// 把格子恢复成可选，不会误复位任何人的提交态。
+        /// </remarks>
+        private static void BroadcastSkillFreed(ESkillType skill)
+        {
+            ServerGameRoom room = ServerGameRoom.Instance;
+            if (room == null || Managers.Data == null || Managers.Data.CharacterDic == null)
+            {
+                return;
+            }
+
+            try
+            {
+                foreach (Data.CharacterData data in Managers.Data.CharacterDic.Values)
+                {
+                    if (data == null || data.Skill != skill)
+                    {
+                        continue;
+                    }
+
+                    room.Broadcast(new S_CANCEL_PICK_CHARACTER
+                    {
+                        PlayerId = 0,
+                        CharacterId = data.DataId,
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                global::ClueDetail.Core.Log.Exception(ex, "两次选人：广播技能释放失败。");
             }
         }
 
