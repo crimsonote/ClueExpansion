@@ -66,6 +66,26 @@ namespace ClueDetail.Features.Client.ClueRender
             }
         }
         /// <summary>
+        /// 换局清理：<c>ClueManager.Clear</c> 是客户端回大厅时清线索列表的地方
+        /// （<c>StartLobby</c>，0.1.21 :30109），也是「本局线索 → 设备」关联表唯一可靠的重置点。
+        /// </summary>
+        /// <remarks>
+        /// ⚠️ 2026-11-14：此前 <see cref="ActivityMap"/> 用"线索时间明显回退 ⇒ 换局"的启发式自动清理，
+        /// 结果把**同一局内**时间跨度数百秒的正常线索当成换局，反复清空关联表（连同待响应扫描队列），
+        /// ② 设备关联几乎永远 miss —— 这是"房主没装本模块时只有单设备房间能猜对"的直接原因之一。
+        /// 现在改为这里显式清理。
+        /// </remarks>
+        [HarmonyPatch(typeof(ClueManager), nameof(ClueManager.Clear))]
+        internal static class ClueClearHook
+        {
+            private static void Postfix()
+            {
+                if (!FeatureLoader.Enabled<ClueRenderFeature>()) return;
+                ActivityMap.Clear();
+            }
+        }
+
+        /// <summary>
         /// 本机发起扫描时把设备号压进待响应队列。
         /// </summary>
         /// <remarks>
@@ -86,12 +106,21 @@ namespace ClueDetail.Features.Client.ClueRender
         }
 
         /// <summary>
-        /// 收到扫描结果时：① 读取房主侧状态标记；② 把这一批线索登记到队首那台设备上。
+        /// 收到扫描结果时：把这一批线索登记到队首那台设备上。
         /// </summary>
         /// <remarks>
+        /// <para>
         /// <c>S_SCAN_DEVICE</c> 只带 InfoList，协议里没有设备号 —— 所以"这次扫的是哪台设备"
         /// 只能由客户端自己在请求与响应之间搭桥。键与 <c>AlreadyExistClue</c> 的原版去重口径一致
         /// （PlayerId + RoomId + Time）。
+        /// </para>
+        /// <para>
+        /// ⚠️ **2026-11-14 改 Postfix → Prefix**：<c>TakeDeviceClue</c> 一进来就
+        /// <c>AddClue</c> → <c>Managers.Tablet.Tablet.AddClue</c> → 列表行 <c>FillText</c> →
+        /// <c>Util.FormatProposition</c>（0.1.21 :27588-27605 / :27604）。挂 Postfix 时**界面已经渲染完**，
+        /// 本次扫描的线索在第一次渲染时还查不到设备关联，只能显示通用文案；而列表行之后不会自动重算。
+        /// 改到 Prefix 先记账，同一批线索的第一次渲染就能走 ② 设备关联。
+        /// </para>
         /// <para>
         /// 配对：在待响应队列里找**第一个房间匹配**的设备（2026-10-19 修 F5）。
         /// 旧实现只看队首 ⇒ 一次被拒（旁观者）或没响应的请求会**永久卡住队首**，
@@ -102,14 +131,13 @@ namespace ClueDetail.Features.Client.ClueRender
         [HarmonyPatch(typeof(ClueManager), nameof(ClueManager.TakeDeviceClue))]
         internal static class TakeDeviceClueHook
         {
-            private static void Postfix(S_SCAN_DEVICE pkt)
+            private static void Prefix(S_SCAN_DEVICE pkt)
             {
                 if (!FeatureLoader.Enabled<ClueRenderFeature>()) return;
                 if (pkt == null || pkt.InfoList == null)
                 {
                     return;
                 }
-
 
                 if (pkt.InfoList.Count == 0)
                 {
@@ -138,6 +166,37 @@ namespace ClueDetail.Features.Client.ClueRender
                         ActivityMap.Remember(info.PlayerId, info.Time, info.RoomId, deviceId);
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// 线索进入列表之前，先用游戏自己的镜像把「线索 → 设备」补上。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <c>S_ADD_MY_CLUES</c>（侦探开始时整批下发，0.1.21 :174518-174540；死者拿全量）
+        /// **协议里没有设备号**，客户端只能拿三元组查自己的关联表。而这些线索多半在
+        /// <c>S_ADD_CLUE</c> 实时广播时被游戏记进过 <c>Server.Game.ClueMirror</c> ——
+        /// 在 <c>AddClue</c> 之前反查一次，后面 <c>Tablet.AddClue</c> → <c>FillText</c> →
+        /// <c>FormatProposition</c> 的第一次渲染就能带上真实活动。
+        /// </para>
+        /// <para>
+        /// 只读镜像、命中才写我们的关联表；房主本机镜像为空（<c>Handle_S_ADD_CLUE</c> 的 IsHost 守卫，
+        /// :43623），这里自然什么都不做。
+        /// </para>
+        /// </remarks>
+        [HarmonyPatch(typeof(ClueManager), nameof(ClueManager.AddClue))]
+        internal static class AddClueHook
+        {
+            private static void Prefix(PropositionInfo info)
+            {
+                if (!FeatureLoader.Enabled<ClueRenderFeature>()) return;
+                if (info == null)
+                {
+                    return;
+                }
+
+                ActivityMap.FindInMirror(info.PlayerId, info.Time, info.RoomId);
             }
         }
 

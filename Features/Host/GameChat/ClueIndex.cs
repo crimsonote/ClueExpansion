@@ -7,6 +7,7 @@ using ServerDeviceManager = Server.Game.DeviceManager;
 using ServerGamePlayer = Server.Game.Player;
 using ServerGameRoom = Server.Game.GameRoom;
 using BreakerDevice = ClueDetail.Features.Host.ShadowSabotage.BreakerDevice;
+using ClueFakeState = ClueDetail.Features.Host.ClueFake.ClueFakeState;
 
 namespace ClueDetail.Features.Host.GameChat
 {
@@ -29,6 +30,9 @@ namespace ClueDetail.Features.Host.GameChat
             /// </summary>
             /// <remarks>临时判例（2026-10-20），只为 /clue 的文本服务，可随判例一起整体移除。</remarks>
             public int Breaker = -1;
+
+            /// <summary>是否是「线索伪造」录入的虚假线索（只用于末尾的条数提示，不标是哪一条）。</summary>
+            public bool Fake;
         }
 
         /// <summary>逐人线索表：<c>pid → (线索键 → 快照)</c>。</summary>
@@ -126,6 +130,7 @@ namespace ClueDetail.Features.Host.GameChat
                 Breaker = breaker,
                 DeviceId = device.ID,
                 RealOwner = ClueDetail.Core.UnknownFields.GetRealOwner(info),
+                Fake = ClueFakeState.IsFake(info.PlayerId, info.Time, info.RoomId),
             };
             row.Key = KeyOf(info.PlayerId, info.Time, info.RoomId);
             rows[row.Key] = row;
@@ -247,6 +252,13 @@ namespace ClueDetail.Features.Host.GameChat
             }
             // ══════════════════════════════════════════════════════════════════
 
+            // 线索伪造的发信机痕迹：角色线索（黑/黑幕）+ 字段 100 = WChat。
+            // 必须排在角色分支之前，否则会显示「切断了电力 / 销毁了证据」。
+            if (Define.IsRoleClueId(playerId) && what == (int)EWhatType.WChat)
+            {
+                return ClueDetail.Features.Host.ClueFake.ClueFakeLogic.WhatNameOf(EWhatType.WChat);
+            }
+
             if (playerId == Define.MASTERMIND_SABOTAGE_ID)
             {
                 return Managers.GetText(Define.WHAT_CUT_POWER);
@@ -262,7 +274,10 @@ namespace ClueDetail.Features.Host.GameChat
 
         private static bool IsDestroyRow(ClueRow row)
         {
-            return row != null && Define.IsDestroyEvidenceClue(new PropositionInfo { PlayerId = row.PlayerId });
+            if (row == null) { return false; }
+            // 伪装的发信机痕迹也是角色线索，但它不是「销毁了证据」——按普通行渲染。
+            if (Define.IsRoleClueId(row.PlayerId) && row.What == (int)EWhatType.WChat) { return false; }
+            return Define.IsDestroyEvidenceClue(new PropositionInfo { PlayerId = row.PlayerId });
         }
 
         private static bool TryDeviceName(int deviceId, out string name)
@@ -405,6 +420,7 @@ namespace ClueDetail.Features.Host.GameChat
                         RealOwner = ClueDetail.Core.UnknownFields.GetRealOwner(info),
                         DeviceId = device.ID,
                         Key = key,
+                        Fake = ClueFakeState.IsFake(info.PlayerId, info.Time, info.RoomId),
                     });
                 }
             }

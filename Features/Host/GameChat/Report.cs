@@ -6,6 +6,7 @@ using ServerDeviceManager = Server.Game.DeviceManager;
 using ServerGamePlayer = Server.Game.Player;
 using ServerGameRoom = Server.Game.GameRoom;
 using ServerTimeManager = Server.Game.TimeManager;
+using ClueFakeFeature = ClueDetail.Features.Host.ClueFake.ClueFakeFeature;
 
 namespace ClueDetail.Features.Host.GameChat
 {
@@ -112,6 +113,30 @@ namespace ClueDetail.Features.Host.GameChat
 
             // ⚠️ 先线索（用户口径 2026-10-20）。
             Reply(room, player, null, lines);
+
+            // 「可能为伪造」：**独立一条消息、独立气泡**，只报**全部线索**的数量 ——
+            // 不跟正文挤在一起（否则会被 3 行气泡拆成「有 1…」「条线索可能为伪造）」两段），
+            // 也不表示某个筛选条件下的数量（/clue 不再提示）。
+            if (ClueFakeFeature.ReportHint != null && ClueFakeFeature.ReportHint.Value)
+            {
+                List<ClueRow> all = string.IsNullOrEmpty(query) ? rows : Search(player, string.Empty);
+                int fake = 0;
+                for (int i = 0; i < all.Count; i++)
+                {
+                    if (all[i].Fake)
+                    {
+                        fake++;
+                    }
+                }
+
+                if (fake > 0)
+                {
+                    Reply(room, player, null, new List<string>
+                    {
+                        $"【伪造提示】你所搜集到的全部线索中，有 {fake} 条可能为伪造",
+                    });
+                }
+            }
 
             // 再帮助，且与 /help 完全一致（同一个可用命令表）。
             Reply(room, player, null, HelpLines(room));

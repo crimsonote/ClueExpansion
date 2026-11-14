@@ -55,9 +55,6 @@ namespace ClueDetail.Features.Host.GameChat
         /// </remarks>
         internal const int MaxLinesPerMessage = 3;
 
-        /// <summary>本模块认领的命令名（小写比较）。</summary>
-        internal static readonly string[] OwnCommands = { "say", "clue", "who", "help" };
-
         public static void Bind(ConfigFile config, string section)
         {
             MaxLineWidth = config.Bind(
@@ -69,6 +66,93 @@ namespace ClueDetail.Features.Host.GameChat
                     "折出来的行同样计入「每条消息最多 3 行」的上限。\n" +
                     "气泡放不下的行会被原版 TMP 直接截断，所以这个值不宜超过气泡实际宽度。",
                     new AcceptableValueRange<int>(20, 200)));
+        }
+
+        /// <summary>
+        /// 注册本模块的聊天命令（启动时一次，与开关状态无关）。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// 命令的「声明」集中在这里：名字 / 别名 / 用法 / 说明 / 频道 / 阶段 / 是否吞包，
+        /// 执行委托仍然指向各自的业务方法。新增命令只加一条
+        /// <see cref="ChatCommandDef"/>，<see cref="ChatCommandHook"/> 与 <c>/help</c> 都自动跟上。
+        /// </para>
+        /// <para>
+        /// ⚠️ 阶段门禁（<c>/say</c> 大厅/会议/调查、<c>/clue</c> 仅会议、<c>/f</c> 仅生存）
+        /// 仍在各命令内部，表里的 <see cref="ChatCommandDef.HelpPhases"/> 只用于帮助列表过滤 ——
+        /// 这样迁移前后行为逐字不变。等抽成共享库时再把门禁上移。
+        /// </para>
+        /// </remarks>
+        public static void OnLoaded()
+        {
+            ChatCommandTable.Clear();
+
+            ChatCommandTable.Register(new ChatCommandDef
+            {
+                Name = "say",
+                Aliases = new[] { "s" },
+                Usage = "<昵称|ID> <消息>",
+                Description = "私聊（= /say）",
+                Channels = ChatChannelMask.Public,
+                HelpPhases = ChatPhaseMask.Lobby | ChatPhaseMask.Trial | ChatPhaseMask.Detective,
+                Swallow = true,
+                Handler = ctx => CmdSay(ctx.Room, ctx.Player, ctx.Args),
+            });
+
+            ChatCommandTable.Register(new ChatCommandDef
+            {
+                Name = "clue",
+                Aliases = new[] { "c" },
+                Usage = "[条件...]",
+                Description = "搜索线索（= /clue）",
+                ExtraHelp = new[] { "/c help  完整语法（t: p: r: a: id: 等）" },
+                Channels = ChatChannelMask.Public,
+                HelpPhases = ChatPhaseMask.Trial,
+                Swallow = true,
+                Handler = ctx => CmdClue(ctx.Room, ctx.Player, ctx.Args),
+            });
+
+            ChatCommandTable.Register(new ChatCommandDef
+            {
+                Name = "who",
+                Aliases = new[] { "w" },
+                Usage = string.Empty,
+                Description = "玩家 ID 与昵称（= /who）",
+                Channels = ChatChannelMask.Public,
+                HelpPhases = ChatPhaseMask.Any,
+                Swallow = true,
+                Handler = ctx => CmdWho(ctx.Room, ctx.Player),
+            });
+
+            ChatCommandTable.Register(new ChatCommandDef
+            {
+                Name = "help",
+                Aliases = new[] { "h" },
+                Usage = string.Empty,
+                Description = "这份帮助（= /help）",
+                Channels = ChatChannelMask.Public,
+                HelpPhases = ChatPhaseMask.Any,
+                // ⚠️ 只报到、不吞：让链上后面的模块（捉迷藏等）继续报各自的帮助。
+                Swallow = false,
+                Handler = ctx => CmdHelp(ctx.Room, ctx.Player),
+            });
+
+            ChatCommandTable.Register(new ChatCommandDef
+            {
+                Name = "fake",
+                Aliases = new[] { "f" },
+                Usage = "[时间] [人物] [房间] [活动]",
+                Description = "线索伪造（黑方秘密终端）",
+                // Public / Device 也认领：在这两处输入 /f 要给一句「只能在黑方秘密终端使用」的提示，
+                // 不能放行成普通聊天/发信机留言（会议阶段会广播出去）。
+                Channels = ChatChannelMask.Public | ChatChannelMask.Device | ChatChannelMask.Secret,
+                // 只有黑方/黑幕认领；白方输入 /f 不拦截（像本模块没注册过）。
+                Side = ChatSide.Black,
+                HelpPhases = ChatPhaseMask.Survive,
+                Swallow = true,
+                Handler = ctx => ClueDetail.Features.Host.ClueFake.ClueFakeCommand.Handle(
+                    ctx.Room, ctx.Player, ctx.DeviceId, ctx.Args, ctx.Channel),
+            });
         }
     }
 }

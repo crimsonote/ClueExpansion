@@ -2,6 +2,7 @@
 using HarmonyLib;
 using ClueDetail.Core;
 using Protocol;
+using ClueFakeCommand = ClueDetail.Features.Host.ClueFake.ClueFakeCommand;
 using ServerGameHostPacketHandler = Server.Game.HostPacketHandler;
 using ServerGameHostPeerSession = Server.Game.HostPeerSession;
 using ServerGamePlayer = Server.Game.Player;
@@ -12,7 +13,7 @@ namespace ClueDetail.Features.Host.GameChat
     internal partial class GameChatFeature
     {
         /// <summary>
-        /// 拦截玩家的聊天包，识别本模块命令。
+        /// 拦截玩家的聊天包，按 <see cref="ChatCommandTable"/> 认领本模块的命令。
         /// </summary>
         /// <remarks>
         /// <para>
@@ -20,8 +21,9 @@ namespace ClueDetail.Features.Host.GameChat
         /// （默认 <c>Normal</c> 优先级）且会吞掉 <c>/help</c>；我们必须先报到，它才能继续报它的帮助。
         /// </para>
         /// <para>
-        /// ⚠️ 只处理 <c>NormalChat</c>：<c>DeviceChat</c> / <c>SecretChat</c> 是发信机频道，
-        /// 走原版逻辑（含占用判定、密聊黑方闸门、冷却），本模块**不参与**。
+        /// 三条频道都读：<c>NormalChat</c>（平板聊天）、<c>DeviceChat</c>（公开发信机）、
+        /// <c>SecretChat</c>（黑方秘密终端）。命令只在注册时声明过的频道生效；
+        /// 未命中（名字不在表里 / 频道不匹配）一律放行，不抢别人的命令。
         /// </para>
         /// <para>
         /// ⚠️ 命令解析在 <c>room.Push(...)</c> 里做（与捉迷藏、原版一致）：那是在主线程上执行，
@@ -43,55 +45,13 @@ namespace ClueDetail.Features.Host.GameChat
                         return true;
                     }
 
-                    if (msg.Type != EChatType.NormalChat)
-                    {
-                        return true;              // 发信机 / 密聊频道不参与
-                    }
-
-                    string text = (msg.Text ?? string.Empty).Trim();
-                    if (text.Length < 2 || text[0] != '/')
-                    {
-                        return true;              // 不是命令
-                    }
-
-                    if (!(session is ServerGameHostPeerSession peer))
+                    ChatChannelMask channel = ChatCommandTable.ChannelOf(msg.Type);
+                    if (channel == ChatChannelMask.None)
                     {
                         return true;
                     }
 
-                    ServerGamePlayer player = peer.Player;
-                    ServerGameRoom room = ServerGameRoom.Instance;
-                    if (player == null || room == null)
-                    {
-                        return true;
-                    }
-
-                    string[] parts = text.Substring(1)
-                        .Split(new[] { ' ', '\t' }, global::System.StringSplitOptions.RemoveEmptyEntries);
-                    if (parts.Length == 0)
-                    {
-                        return true;
-                    }
-
-                    string name = parts[0].ToLowerInvariant();
-                    if (!IsOwnCommand(name))
-                    {
-                        return true;              // ① 只认领自己的名字 ⇒ 放行给别人
-                    }
-
-                    string arg = parts.Length > 1
-                        ? string.Join(" ", parts, 1, parts.Length - 1)
-                        : string.Empty;
-
-                    room.Push(delegate { Dispatch(room, player, name, arg); });
-
-                    // ③ /help 只报到不吞：让链上后面的模块继续报各自的帮助。
-                    if (name == "help")
-                    {
-                        return true;
-                    }
-
-                    return false;                 // ② 认领了就吞
+                    return HandleChannel(session, msg, channel);
                 }
                 catch (global::System.Exception ex)
                 {
@@ -100,21 +60,92 @@ namespace ClueDetail.Features.Host.GameChat
                 }
             }
 
-        /// <summary>这个命令名（含单字母别名）是否属于本模块。</summary>
-        private static bool IsOwnCommand(string name)
-        {
-            name = Canonical(name);   // 先规范化：/c 之类也要算自家命令
-
-            for (int i = 0; i < OwnCommands.Length; i++)
+            /// <summary>
+            /// 三条频道共用：命令查表分发；非命令只把「黑方秘密终端里进行中的会话」当答案吞掉。
+            /// </summary>
+            private static bool HandleChannel(
+                IPacketSink session, C_CHAT_MESSAGE msg, ChatChannelMask channel)
             {
-                if (string.Equals(OwnCommands[i], name, global::System.StringComparison.OrdinalIgnoreCase))
+                if (!(session is ServerGameHostPeerSession peer))
                 {
                     return true;
                 }
-            }
 
-            return false;
-        }
+                ServerGamePlayer player = peer.Player;
+                ServerGameRoom room = ServerGameRoom.Instance;
+                if (player == null || room == null)
+                {
+                    return true;
+                }
+
+                string text = (msg.Text ?? string.Empty).Trim();
+                if (text.Length == 0)
+                {
+                    return true;
+                }
+
+                if (text[0] == '/')
+                {
+                    string[] parts = text.Substring(1)
+                        .Split(new[] { ' ', '\t' }, global::System.StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length == 0)
+                    {
+                        return true;
+                    }
+
+                    string name = parts[0].ToLowerInvariant();
+                    ChatCommandDef def;
+                    if (!ChatCommandTable.TryFind(name, out def))
+                    {
+                        return true;                  // ① 只认领自己的名字 ⇒ 放行给别人
+                    }
+
+                    // ② 功能被关掉时**不认领**：/f 就像没注册过（秘密终端里原版会静默丢弃，
+                    // 平板聊天里原版照常处理），而不是把玩家的输入静默吞掉。
+                    if (def.Name == "fake"
+                        && (!FeatureLoader.Enabled<ClueDetail.Features.Host.ClueFake.ClueFakeFeature>()
+                            || (!ClueDetail.Features.Host.ClueFake.ClueFakeFeature.BlackEnabled.Value
+                                && player.Color == EPlayerColor.Black)))
+                    {
+                        return true;
+                    }
+
+                    if (!ChatCommandTable.Accepts(def, channel))
+                    {
+                        return true;                  // 频道不匹配 ⇒ 不抢别人的频道
+                    }
+
+                    // 阵营不匹配 ⇒ 不认领（例如白方输入 /f：如同本模块没注册）。
+                    if (!ChatCommandTable.SideAllows(def, room, player))
+                    {
+                        return true;
+                    }
+
+                    string arg = parts.Length > 1
+                        ? string.Join(" ", parts, 1, parts.Length - 1)
+                        : string.Empty;
+
+                    room.Push(delegate { ChatCommandTable.Dispatch(room, player, def, arg, channel, msg.DeviceId); });
+
+                    // ③ /help 只报到不吞（Swallow=false）；其余认领了就吞。
+                    return !def.Swallow;
+                }
+
+                // 非命令：只有黑方秘密终端里「进行中的 /f 会话」才当答案吞掉。
+                // 普通聊天 / 公开发信机留言一律放行，不能影响别的模块与正常留言。
+                if (channel == ChatChannelMask.Secret
+                    && player.PublicInfo != null
+                    && ClueFakeCommand.HasSession(player.PublicInfo.PlayerId))
+                {
+                    room.Push(delegate
+                    {
+                        ClueFakeCommand.HandleAnswer(room, player, msg.DeviceId, text);
+                    });
+                    return false;
+                }
+
+                return true;
+            }
         }
 
         /// <summary>

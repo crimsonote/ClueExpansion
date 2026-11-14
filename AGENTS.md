@@ -1,4 +1,4 @@
-# ClueDetail 开发规范
+﻿# ClueDetail 开发规范
 
 《Deadly Trick》的**独立** BepInEx 5 插件，用于还原 0.1.18 从线索里移除的「详细活动」。
 
@@ -82,6 +82,12 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
    边界：只在 Survive 阶段、只在对应破坏点处于已破坏状态时生效；只改**包内 / 克隆**的副本，
    绝不动服务端 `ClueList`（依据见 `docs/隐蔽破坏点.md` §2 末行与 §4 之 4；
    代价与"房主看不到时间污染"这个已知缺口见 `docs/线索机制.md`）。
+   **例外备案（2026-11-10）**：`Features/Host/ClueFake/` 的 `x` 模式会**主动改写**下一条真实线索的
+   `Time` / `PlayerId`。它不是"污染可见性"而是**玩法本身要的伪装效果**（"把下一条线索改成黑方指定
+   的时间/人物"），所以必须同时改**服务端 `ClueList` 真值**与广播包副本 —— 否则后续扫描又读回旧值，
+   `x` 等于没做。边界：仅 `Survive`、仅黑方 / 黑幕、一次性（命中即清槽）、
+   **跳过角色线索 11037/11038/66613 与本功能自己写的伪证**；改键后主动补字段 100
+   （`RecordDetail.StampWhat` 按旧键已查不到）。机制见 `docs/线索伪造.md` §6。
 2. **未装插件的一端必须不炸。** 跨端数据分**两条通道**，按数据性质选，不是二选一（2026-10-18 定案）：
    - **线索的「详细活动」→ protobuf 未知字段**（`Core/UnknownFields.cs`，字段号 **100**）。
      它是**线索的一个属性**，附着在 `PropositionInfo` 上天然一一对应：零关联键、无时序要求、
@@ -150,6 +156,8 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
 | **线索文本管线（详表）**：文本来源优先级阶梯、渲染路径、污染逐段影响、0.1.17a↔0.1.18 差异、决策记录 | `docs/线索管线.md` |
 | 审判规则：黑幕二次投票 | `docs/审判规则-二次投票.md` |
 | **游戏内聊天命令**：`/say` 私聊、`/clue` 线索检索、`/help` 报到式帮助、会议自动线索报告、与其它模块的共存约定 | `docs/游戏内命令.md` |
+| **线索伪造**：`/f` 的入口/参数/写入设备/发信机痕迹/`x` 重写/伪造提示 | `docs/线索伪造.md` |
+| **断电融毁**：断电期间倒计时流速 / 停钟 / 近期融毁胜率统计 / 捉迷藏互斥 | `docs/断电融毁.md` |
 | prefab / bundle 的坑与节点真相 | `docs/prefab与bundle.md` |
 | **彩蛋：尸体撒花**：四层判定、`Corpse.RoomID` 恒 0、`CompositeCollider2D` 陷阱、离线模拟手法 | `docs/彩蛋撒花.md` |
 | **回放时间线**：红色 `--:--` 的四条件、隐藏窗口只有 3 个点、`IsRegular` 硬编码 10、20 分钟录制的影响 | `docs/回放时间线.md` |
@@ -368,15 +376,20 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
       另在 `HostPeerSession.Send` 上挂 **S_SPAWN Prefix**：AOI 的 `AddPlayer` 发的 `S_SPAWN`
       会把副本改 `IsGhost=true`（`ref IMessage` 覆写，不额外发包）；`OnAddPlayerSent` 补发前
       也要检查收件人在集合内。配置 `BellRespectAoi`（默认 true），false 才退回旧的全房间实验行为。
-    - **真鬼显形**：每 20–35 秒（`RevealIntervalMin/Max`）在所有人（含调查阶段；旁观者可按配置隐藏）
-      视野显形 2–4 秒（`RevealDurationMin/Max`），**不改生死**。
-      `RevealHideSpectators`（默认 true）= 显形/隐匿都跳过 `IsSpectator`，也不把他们加进
-      `SharedPlayers`；false 才所有人可见。只影响 Reveal，不影响铃铛伪装。
+    - **真鬼显形**：每 20–35 秒（`RevealIntervalMin/Max`）在**活人**视野显形 2–4 秒
+      （`RevealDurationMin/Max`，含调查阶段），**不改生死**。鬼魂之间始终互相可见，本功能不干涉。
+      `RevealSpectatorGhosts`（默认 false）= 观战者（`IsSpectator`）的鬼魂**不纳入显形管理**：
+      不进 `NextRevealAt`/`RevealUntil`，显形、隐匿、安魂曲都不波及；true 才与普通鬼魂一样显形。
+      ⚠️ 显形/隐匿**只写 `PublicInfo.State`，绝不能走 `Player.State` 属性**：属性的
+      `BroadcastModifyPlayer`（:179963-179978）会把状态变更发给所有 `DeadPlayers`，
+      客户端 `StartState(Hide)` → `PlayerStealth(true)`（:13889）会把 Ghost 子物体的
+      SpriteRenderer 一起清成透明 ⇒ 其他鬼魂看不见他（2026-11-03 用户实机反馈）。
+      鬼魂侧可见性由原版 `BroadcastToDeadPlayers`（`Player.Move` :178987）维持；
+      `BroadcastRespawn` / `BroadcastDespawn` 遇到「目标已死且观察者已死」直接跳过，一个包都不发。
       ⚠️ 显形/隐藏必须走原版 `Player.AddPlayer` / `RemovePlayer`，**不能只发 S_SPAWN**：
       移动包 `Player.Move`（:178959）只经 `BroadcastToPlayerAndObservers`（:180103）发给
       `SharedPlayers`，不发这个集合的话活人看到的永远是显形瞬间的静止位置。
-      注意 `ghost.State = Hide` 时 `StartState(Hide)` 自己会清空 `SharedPlayers` 并 despawn，
-      所以「先改 State、再 RemovePlayer」的顺序是安全的（集合已空时 RemovePlayer 直接返回 false）。
+      现在不再靠 `ghost.State = Hide` 清集合（那会广播给鬼魂），`BroadcastDespawn` 自己逐个 `RemovePlayer`。
     - **安魂曲**：显形期间以幽灵位置为中心、按三拍一组（`RequiemBeatGap` 0.7 / `RequiemRestGap` 2.4）
       播 `HandBellSfx`；`BroadcastWorldSFX` 距离 **1120** = 铃铛正常声音范围（:179295 / :22644），
       超出半径听不到。计时用 `Time.realtimeSinceStartup`（亚秒节奏，`SurviveTime` 是整数秒）。
@@ -386,8 +399,10 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
       0.1.18 :174300-174302，不挂的话「进调查清伪装」和「调查阶段真鬼显形」都不会发生）、
       `ChangeGameState`（离开 Survive 清伪装）、`HostPeerSession.Send`（AOI 的 `S_ADD_PLAYER`
       之后补发一帧 `S_SPAWN(IsGhost=true)`，否则缓存重建会露出真身）。
-    - 显形靠撤 `State=Hide`：客户端 `HidePlayer(false)` 恢复不透明、AOI 重新纳入；
-      结束改回 `Hide`，`StartState(Hide)` 会自动清空 `SharedPlayers`。
+    - 显形时 `PublicInfo.State` 记成 `Idle`（只为让发给活人的 `S_SPAWN` 副本带上 Idle，
+      活人客户端 `EndState(Hide)` 恢复不透明）；服务端不走属性 setter，因此不广播，也不能靠它清
+      `SharedPlayers`。结束时 `PublicInfo.State` 改回 `Hide`，显形期间加入的活人由
+      `BroadcastDespawn` 逐个 `RemovePlayer` 收回。
     - ⚠️ 副作用：显形时黑方客户端会把他显示为可攻击目标（`GetTargetPlayer` 只看 `Hide`），
       但服务端 `UseWeapon` 有 `!IsAlive → "target dead"` 拒绝；`Collider` 会从 trigger 变实体。
     - ⚠️ 审判/投票阶段强制真身：`State != Survive` 时清空伪装集合并恢复。
@@ -416,7 +431,8 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
       （40 秒、随机 `-2`、强制分配），压 `CheckPickAllDone`；进入技能阶段时服务端释放所有人的
       默认技能，对每个已选模型**全局广播** `S_CANCEL_PICK_CHARACTER` 完全重置界面，再给
       `SkillPickSeconds`（默认 20，5–40）独立倒计时。技能先到先得、匿名
-      （`S_PICK_CHARACTER{PlayerId=0}`）；选自己模型 = 保留默认；被占则随机兜底。
+      （`S_PICK_CHARACTER{PlayerId=0}`）；选自己模型 = 保留默认；被占 / 非法则**退回未选**（不随机）；
+      已选的具体技能在**阶段收尾前**可「取消」重选（放回技能池、不动模型），收尾后拒绝。
       按“随机”只是预留、不占技能，等其他人都决定后再从剩余技能里分配。
       只做全局广播，**不做“只对单个客户端成立”的伪造状态**。
       `RuleBreaker` 改为复制目标实际技能。
@@ -424,6 +440,40 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
       （撤销默认技能、加进 `_pickPlayers` 防原版强制分配、锁定 / 收尾补技能），
       **不主动踢人**，也不依赖“选人阶段不会有人加入”这个前提。
     - 机制、锚点、实测清单：`docs/任务满报告延迟与两次选人.md`。
+25. **线索伪造（`/f`）**（2026-11-10，待实机）：`Features/Host/ClueFake/`，**默认开启**。
+    黑方 / 黑幕在**黑方秘密终端**（`EChatType.SecretChat`）里输入 `/f` 录入一条虚假线索；
+    写进目标房间的真实设备 `ClueList`（扫描才可见），活动走未知字段 100。
+    执行成功写一条**匿名角色线索**（黑=66613 / 黑幕=11037，字段 100 = WChat，30 秒合并）；
+    **只在会议开局的一次性播报**里提示「有 N 条可能为伪造」（`ReportHint`）；`/clue` 不再重复提示，只对**黑 / 黑幕 / 死者**的行首标 `[伪造]`（白方无行标）。
+    - 入口：`ChatCommandHook` 从「只认 `NormalChat`」扩展到「认领 `SecretChat` 里的 `/f`
+      与会话答案」；判据复刻 `RelayDeviceChat`（:177827：Survive / 存活 / 发信机占用），
+      再加「黑方 / 黑幕」。
+    - `b` / `m` = 本局黑（`Black`）/ 黑幕（`Dark` / `MasterMind`）的**实际玩家 id**，不是角色线索 id。
+    - `-` = 占位符（这一项留到交互式补全，已给的项照常生效；交互式从第一个未填项开始问）。
+    - `+25` / `-15` = 时间偏移（分钟）：新写模式基于命令执行时刻，x 模式基于下一条线索的真实时间。
+    - `[ClueFake] BlackEnabled`（默认 true，热读）：关闭后只有黑方不能用，黑幕不受影响。
+    - `[ClueFake] XMode`（`overwrite` 默认 / `queue`）：连续两次 x 是覆盖还是排队。
+    - `x` = 逐字段「保留真实」：`/f x x x` 只把下一条线索标记为伪造；`/f x m x` 只改身份；房间/活动在改写模式下只能真实。挂 `GameRoom.Broadcast` Prefix
+      （`[HarmonyPriority(Priority.Low)]`），改包内副本 + 服务端 `ClueList` 对象，命中即清槽；
+      **不挂 `RecordLastUsingPlayer`**（它被 `ClueMerge` 接管，且可能被关）。
+      边界与备案见 §4.1 第二条例外；改写后的线索同样登记「伪造」键（`/clue` 标 `[伪造]`）。时间允许写到 23:59（可晚于当前时刻）。
+    - 机制、限流、验证清单：`docs/线索伪造.md`；命令口径：`docs/游戏内命令.md` §8。
+26. **客户端自采集修复：换局误清 + 镜像反查**（2026-11-14，**待实机**）：
+    用户反馈「房主没装本模块时，只有整个房间只有一种活动设备才能猜对」。根因两条（详见 `docs/线索管线.md` §5 F9/F10）：
+    - **F9（真 bug，已修）**：`ActivityMap` 原来用"线索 `Time` 比本局最大值小 60 秒以上 ⇒ 换局"的启发式清理，
+      但一局内线索时间本来就横跨数百秒，渲染顺序又不单调 ⇒ 关联表连同待响应扫描队列被反复误清，② 几乎永远 miss。
+      现在删掉启发式，改由 `ClueRenderFeature.ClueClearHook` 挂 `ClueManager.Clear`（回大厅 `StartLobby` 调，0.1.21 :30109）显式清。
+    - **②.5 线索镜像反查（新增）**：渲染时若 ② 未命中，遍历本局设备，在游戏自己的 `Server.Game.ClueMirror`
+      （`S_ADD_CLUE` 的 DeviceId 落点，:180795）里按三元组找回设备。房主本机镜像为空，自然 miss。
+    - **`TakeDeviceClueHook` 由 Postfix 改 Prefix**：`TakeDeviceClue` 一进来就 `AddClue` → 平板 `FillText` → `FormatProposition`，
+      挂 Postfix 时首次渲染拿不到本次扫描的关联；改 Prefix 先记账。
+    - **`AddClueHook`（新增）**：`S_ADD_MY_CLUES` 整批下发（不带设备号）进入列表前，先跑一次镜像反查。
+    - **`RoomDeviceScan` 收窄**：候选优先取本局实际设备实例（`Managers.Device.Cache`），静态表只作兜底。
+    - 结构上限备案：`S_ADD_MY_CLUES` 协议里没有设备号，房主没装时"从未实时广播过的线索"只能按房间猜（F10）。
+27. **断电融毁倒计时**（2026-11-14，待实机）：`Features/Host/Meltdown/`，段 `[ClueMeltdown]`，**默认启用**。
+    断电（2 台电闸）期间按 `SpeedMultiplier` 调整剩余时间流逝；最近 `RecentRounds` 局融毁胜利比例
+    **严格大于** `RatioThreshold`（默认 30%）时本局断电停钟，并在开局第 5 秒 / 白转黑后经秘密通道告知黑方。
+    捉迷藏模式（`[HS_Mode] Enabled`）启用时失效，`HideAndSeekMode` 可三态调整；提示走 `NoticeEnabled` / `NoticeText`。机制与边界见 `docs/断电融毁.md`。
 ### 搁置（等用户决策，2026-10-20）
 
 - **头像与「某人」文本无法同时在纯服务端成立**：`UI_ClueSubItem.FillText`（:86635）
@@ -507,7 +557,8 @@ csproj **不引用**它的程序集，拿不到就只记一行提示。
 
 两个伪装成小熊的服务端破坏点（科学室身份识别组件 / 电脑室时钟记录组件）。
 **规则摘要**：未破坏时只有黑幕能按 E；破坏后所有人（含黑幕）可修；
-**破坏期间封锁一切其他破坏**（另一个点 + 原版电闸窗口，图钉 / 平板条目一起撤掉）；
+**破坏期间封锁一切其他破坏**（另一个点 + 原版电闸窗口，图钉 / 平板条目一起撤掉；
+**双向**：原版断电完成时同样把两个小熊锁到下一次窗口派发，见 `docs/隐蔽破坏点.md` §7.2）；
 **修复完成 60 秒后**自建计时器重派发；**每次完整破坏追加一条**「黑幕…切断了电力」线索（同 30 秒窗口合并）。
 实现细节、机制依据、坑与实机验证状态见文档。
 ## 11. 开关体系（2026-10-18 起：全部热更新，空转式）

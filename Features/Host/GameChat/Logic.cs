@@ -4,6 +4,7 @@ using ServerDevice = Server.Game.Device;
 using ServerDeviceManager = Server.Game.DeviceManager;
 using ServerGamePlayer = Server.Game.Player;
 using ServerGameRoom = Server.Game.GameRoom;
+using ServerTimeManager = Server.Game.TimeManager;
 
 namespace ClueDetail.Features.Host.GameChat
 {
@@ -11,71 +12,28 @@ namespace ClueDetail.Features.Host.GameChat
     {
         // ══════════════════ 分发 ══════════════════
 
-        /// <summary>命令分发（在主线程 <c>room.Push</c> 里执行）。</summary>
         /// <summary>
-        /// 单字母短别名 → 主名（2026-10-20 用户要求：所有局内命令都提供单字母别名）。
+        /// 命令分发（在主线程 <c>room.Push</c> 里执行）——统一走
+        /// <see cref="ChatCommandTable"/>，这里只保留一个薄包装。
         /// </summary>
         /// <remarks>
-        /// 在**判断归属之前**就规范化：这样 <c>/c</c> 也算自家命令；完整名照常可用。
-        /// 未知命令原样返回（转小写）。
+        /// 命令的归属 / 频道 / 别名 / 吞包标志都在注册表里；本方法不再有 <c>switch</c>。
         /// </remarks>
-        private static string Canonical(string name)
+        internal static bool Dispatch(
+            ServerGameRoom room,
+            ServerGamePlayer player,
+            ChatCommandDef def,
+            string arg,
+            ChatChannelMask channel,
+            int deviceId)
         {
-            if (string.IsNullOrEmpty(name))
-            {
-                return name;
-            }
-
-            string lower = name.ToLowerInvariant();
-            switch (lower)
-            {
-                case "s": return "say";
-                case "c": return "clue";
-                case "w": return "who";
-                case "h": return "help";
-                default: return lower;
-            }
+            return ChatCommandTable.Dispatch(room, player, def, arg, channel, deviceId);
         }
 
-        private static void Dispatch(ServerGameRoom room, ServerGamePlayer player, string name, string arg)
-        {
-            name = Canonical(name);
-            switch (name)
-            {
-                case "say":
-                    CmdSay(room, player, arg);
-                    break;
-                case "clue":
-                    CmdClue(room, player, arg);
-                    break;
-                case "who":
-                    CmdWho(room, player);
-                    break;
-                case "help":
-                    CmdHelp(room, player);
-                    break;
-            }
-        }
-
-        /// <summary>本阶段可用的命令清单（给 <c>/help</c> 与错误提示用）。</summary>
+        /// <summary>本阶段可用的命令清单（给 <c>/help</c> 与会议报告用）。</summary>
         private static string[] AvailableCommands(ServerGameRoom room)
         {
-            var list = new List<string>();
-            if (room.State == EGameState.Lobby || room.State == EGameState.Trial)
-            {
-                list.Add("/s <昵称|ID> <消息>  私聊（= /say）");
-            }
-
-            if (room.State == EGameState.Trial)
-            {
-                list.Add("/c [条件...]  搜索线索（= /clue）");
-                list.Add("/c help  完整语法（t: p: r: a: id: 等）");
-            }
-
-
-                list.Add("/w  玩家 ID 与昵称（= /who）");
-                list.Add("/h  这份帮助（= /help）");
-            return list.ToArray();
+            return ChatCommandTable.HelpLines(room);
         }
 
         // ══════════════════ /say ══════════════════
@@ -314,6 +272,40 @@ namespace ClueDetail.Features.Host.GameChat
         /// 再多就会把聊天框顶爆，所以超出部分用 /clue ... page:N 翻页。
         /// </remarks>
         private const int MaxBubblesPerPage = 15;
+
+        /// <summary>
+        /// 谁能看见行首的 <c>[伪造]</c> 标记：黑方、黑幕、死者。
+        /// </summary>
+        /// <remarks>
+        /// 白方活人只能看到末尾的「其中 N 条可能为伪造」数量提示 —— 具体是哪一条对本局推理
+        /// 影响太大，不能给白方。判据按 AGENTS.md §4.9：Black = 黑（杀手）、Dark = 黑幕。
+        /// </remarks>
+        private static bool CanMarkFake(ServerGamePlayer player)
+        {
+            if (player == null || player.PublicInfo == null)
+            {
+                return false;
+            }
+
+            if (!player.IsAlive)
+            {
+                return true;                                    // 死者
+            }
+
+            if (player.Color == EPlayerColor.Black)             // 黑（杀手）
+            {
+                return true;
+            }
+
+            if (player.Color == EPlayerColor.Dark)              // 黑幕
+            {
+                return true;
+            }
+
+            ServerGameRoom room = ServerGameRoom.Instance;
+            return room != null && room.MasterMind == player;   // 黑幕的另一种表示
+        }
+
         private static void CmdClue(ServerGameRoom room, ServerGamePlayer player, string arg)
         {
             if (room.State != EGameState.Trial)
@@ -388,15 +380,28 @@ namespace ClueDetail.Features.Host.GameChat
                 ? "【搜索结果】命中 0 条"
                 : $"【搜索结果】命中 {rows.Count} 条");
 
+            // 黑 / 黑幕 / 死者能看到「哪一条是伪造的」——行首标注；其他人只看得到末尾的数量提示。
+            bool markFake = CanMarkFake(player);
             for (int i = 0; i < rows.Count; i++)
             {
-                lines.Add(rows[i].Text);
+                string text = rows[i].Text;
+                if (markFake && rows[i].Fake)
+                {
+                    text = "[伪造] " + text;
+                }
+
+                lines.Add(text);
             }
 
             if (rows.Count == 0)
             {
                 lines.Add("（没有符合条件的线索；/clue help 看语法）");
             }
+
+            // 伪造提示只在**会议开始的一次性播报**里出现（Report.SendReport 的 ReportHint）：
+            // 「在当前所搜集到的全部线索中，有 N 条可能为伪造」。
+            // /clue 是查询工具，不重复这条全局事实 —— 否则每次筛选都弹一次，N 还随条件变，
+            // 既重复又没法据此定位哪一条（2026-11-10 用户口径）。
 
             // 打包成气泡，再按「每页最多 15 个气泡」分页。
             List<List<string>> bubbles = PackBubbles(lines, CurrentWidth());
@@ -492,7 +497,8 @@ namespace ClueDetail.Features.Host.GameChat
         /// <summary>给某个玩家发一条（或数条，按 3 行切分）聊天消息。</summary>
         /// <param name="speaker">显示成谁说的话；null = 玩家自己（回执）。</param>
         /// <param name="lines">若干行文本；每 <see cref="MaxLinesPerMessage"/> 行打包成一条消息。</param>
-        private static void Reply(ServerGameRoom room, ServerGamePlayer player, string single, List<string> lines = null)
+        internal static void Reply(
+            ServerGameRoom room, ServerGamePlayer player, string single, List<string> lines = null)
         {
             if (lines == null)
             {
@@ -515,6 +521,155 @@ namespace ClueDetail.Features.Host.GameChat
                 : 0;
 
             SendBubbles(to, speakerId, PackBubbles(lines, CurrentWidth()), !to.IsAlive);
+        }
+
+        /// <summary>
+        /// 把若干行以**发信机频道**（<c>DeviceChat</c>）发给指定玩家 —— 玩家在发信机 UI 里能直接看到。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// 为什么需要单独一条：<c>/f</c> 是在发信机的聊天界面里输入的，那个界面消费的是
+        /// <c>DeviceChat</c>（客户端 <c>Handle_S_CHAT_MESSAGE</c> :43917 →
+        /// <c>Managers.Voice.EnqueueDeviceChat</c>），普通聊天的回执在发信机界面里看不到。
+        /// </para>
+        /// <para>
+        /// 与原版发信机消息同形：<c>PlayerId = 0</c>、带 <c>DeviceId</c> 与 <c>Time</c>、
+        /// 只发给操作者本人（不是广播）。
+        /// </para>
+        /// </remarks>
+        internal static void SendDeviceLines(ServerGamePlayer to, int deviceId, List<string> lines)
+        {
+            if (to == null || to.Session == null || deviceId == 0 || lines == null || lines.Count == 0)
+            {
+                return;
+            }
+
+            int time = 0;
+            try
+            {
+                var tm = ServerTimeManager.Instance;
+                time = tm == null ? 0 : tm.SurviveTime;
+            }
+            catch
+            {
+                // 取不到时间就发 0（客户端仍显示消息）
+            }
+
+            List<List<string>> bubbles = PackBubbles(lines, CurrentWidth());
+            for (int i = 0; i < bubbles.Count; i++)
+            {
+                string text = string.Join("\n", bubbles[i].ToArray());
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    to.Session.Send(new S_CHAT_MESSAGE
+                    {
+                        Type = EChatType.DeviceChat,
+                        Text = text,
+                        PlayerId = 0,
+                        DeviceId = deviceId,
+                        Time = time,
+                    });
+                }
+                catch (global::System.Exception ex)
+                {
+                    global::ClueDetail.Core.Log.Warn($"线索伪造：发信机回执发送失败（{ex.Message}）。");
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 把若干行以**密聊频道**（<c>SecretChat</c>）发给指定玩家 —— 玩家在黑方秘密终端里能直接看到。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <c>/f</c> 只在黑方秘密终端里生效，回执必须回到同一个频道（客户端
+        /// <c>Handle_S_CHAT_MESSAGE</c> :43925 的 <c>SecretChat</c> 分支 →
+        /// <c>EnqueueDeviceChat(isSecret: true)</c>），否则玩家在秘密终端界面里看不到。
+        /// </para>
+        /// <para>
+        /// 与原版密聊同形：<c>PlayerId = 0</c>、带 <c>DeviceId</c> 与 <c>Time</c>、只发给操作者本人。
+        /// 不设 <c>Seq</c>（客户端 <c>SecretChatMirror.Add</c> 只在 <c>Seq != 0</c> 时去重）。
+        /// </para>
+        /// </remarks>
+        internal static void SendSecretLines(ServerGamePlayer to, int deviceId, List<string> lines, bool truncate = true)
+        {
+            if (to == null || to.Session == null || lines == null || lines.Count == 0)
+            {
+                return;
+            }
+
+            int time = 0;
+            try
+            {
+                var tm = ServerTimeManager.Instance;
+                time = tm == null ? 0 : tm.SurviveTime;
+            }
+            catch
+            {
+                // 取不到时间就发 0（客户端仍显示消息）
+            }
+
+            List<List<string>> bubbles = PackBubbles(lines, CurrentWidth());
+            for (int i = 0; i < bubbles.Count; i++)
+            {
+                string text = string.Join("\n", bubbles[i].ToArray());
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    to.Session.Send(new S_CHAT_MESSAGE
+                    {
+                        Type = EChatType.SecretChat,
+                        Text = text,
+                        PlayerId = 0,
+                        DeviceId = deviceId,
+                        Time = time,
+                    });
+                }
+                catch (global::System.Exception ex)
+                {
+                    global::ClueDetail.Core.Log.Warn($"线索伪造：密聊回执发送失败（{ex.Message}）。");
+                    return;
+                }
+            }
+        }
+
+        /// <summary>按命令的来源频道回执：Public → 普通聊天；Device → 发信机；Secret → 黑方秘密终端。</summary>
+        internal static void ReplyByChannel(
+            ServerGameRoom room,
+            ServerGamePlayer player,
+            ChatChannelMask channel,
+            int deviceId,
+            string single,
+            List<string> lines)
+        {
+            if (lines == null)
+            {
+                lines = new List<string> { single ?? string.Empty };
+            }
+
+            if (channel == ChatChannelMask.Secret)
+            {
+                SendSecretLines(player, deviceId, lines);
+                return;
+            }
+
+            if (channel == ChatChannelMask.Device)
+            {
+                SendDeviceLines(player, deviceId, lines);
+                return;
+            }
+
+            Reply(room, player, null, lines);
         }
 
         /// <summary>当前的折行宽度（配置热读）。</summary>
@@ -540,7 +695,7 @@ namespace ClueDetail.Features.Host.GameChat
         /// ⚠️ 只在**同一条线索**被拆开时打标记；气泡恰好在两条线索之间结束时不打（那不是续行）。
         /// </para>
         /// </remarks>
-        private static List<List<string>> PackBubbles(List<string> lines, int width)
+        private static List<List<string>> PackBubbles(List<string> lines, int width, bool truncateOnContinue = true)
         {
             var bubbles = new List<List<string>>();
             var current = new List<string>();

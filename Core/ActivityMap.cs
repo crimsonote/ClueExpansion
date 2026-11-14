@@ -55,38 +55,19 @@ namespace ClueDetail.Core
         /// <summary>空响应的配对下限：请求发出后至少过了这么久，才可能是眼前这条空响应。</summary>
         private const float MinAgeForEmpty = 1.5f;
 
-        /// <summary>本局见过的最大 <c>SurviveTime</c>：用来识别"换局了"（见 <see cref="ResetIfNewRound"/>）。</summary>
-        private static int _roundMaxTime;
-
         public static void Clear()
         {
             ByClue.Clear();
             PendingScans.Clear();
-            _roundMaxTime = 0;
         }
 
-        /// <summary>
-        /// 跨局清理：<c>SurviveTime</c> 在一局内只增不减，明显回退就说明换局了。
-        /// </summary>
-        /// <remarks>
-        /// ⚠️ 2026-10-19 查出的隐患：<see cref="Clear"/> 此前**从未被调用**，而关联表的键里带 <c>Time</c>
-        /// （每局从 0 重新计时）⇒ 上一局的 (人, 时刻, 房间) 会命中这一局的线索，让 ② 设备关联查错设备。
-        /// 留 60 秒余量，避免把"时间污染把显示时刻冻结成较小值"误判成换局。
-        /// </remarks>
-        private static void ResetIfNewRound(int time)
-        {
-            if (time + 60 < _roundMaxTime)
-            {
-                Clear();
-                _roundMaxTime = time;
-                return;
-            }
-
-            if (time > _roundMaxTime)
-            {
-                _roundMaxTime = time;
-            }
-        }
+        // ⚠️ 2026-11-14 删除「按线索 Time 回退判换局」的启发式（原 ResetIfNewRound）。
+        // 那个判据是 `time + 60 < 本局见过的最大 Time ⇒ 换局了`，但**一局内线索时间本身就横跨数百秒**
+        //（实机日志：435 → 689），而渲染/查询顺序不保证单调（平板、悬浮、补扫各自触发）⇒
+        // 只要先查过一条较晚的线索、再查一条较早的，整张关联表连同待响应扫描队列就被误清，
+        // ② 设备关联几乎永远 miss，只能退到按房间猜。换局清理改由
+        // ClueRenderFeature.ClueClearHook 挂 `ClueManager.Clear`（回大厅 StartLobby 调用，
+        // 0.1.21 :30109）显式执行。
 
         public static string Key(int playerId, int time, int roomId)
         {
@@ -250,14 +231,83 @@ namespace ClueDetail.Core
                 return;
             }
 
-            ResetIfNewRound(time);
             ByClue[Key(playerId, time, roomId)] = deviceId;
         }
 
         public static int DeviceOf(int playerId, int time, int roomId)
         {
-            ResetIfNewRound(time);
             return ByClue.TryGetValue(Key(playerId, time, roomId), out int deviceId) ? deviceId : 0;
+        }
+
+        /// <summary>
+        /// 用游戏自己的 <c>Server.Game.ClueMirror</c> 反查「这条线索属于哪台设备」。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <c>S_ADD_CLUE</c> 自带 <c>DeviceId</c>，客户端 <c>PacketHandler.Handle_S_ADD_CLUE</c>
+        /// （0.1.21 :43621-43627）收到后进 <c>ClueMirror.Add(deviceId, info)</c>（:180795）——
+        /// 这张表由**游戏自己维护**，不会因为我们清理自采集而失效。本模块原来的
+        /// <see cref="Remember"/> 只在两个瞬间记录（扫描响应、广播），表一旦被清就丢；
+        /// 这里在渲染时直接反查镜像，把"广播时没记上/被清掉"的关联补回来。
+        /// </para>
+        /// <para>
+        /// ⚠️ 房主本机不走镜像（<c>Handle_S_ADD_CLUE</c> 的 <c>IsHost</c> 守卫，:43623），
+        /// 这里自然查不到 —— 房主侧由字段 100 / 旁路表负责，不影响。
+        /// </para>
+        /// <para>
+        /// 代价：只在 ② 未命中时调用，遍历本局设备表（几十台）各查一次镜像列表；
+        /// 命中即 <see cref="Remember"/>，同一线索不会重复遍历。
+        /// </para>
+        /// </remarks>
+        public static int FindInMirror(int playerId, int time, int roomId)
+        {
+            try
+            {
+                // 已经记过就不必遍历设备表（ClueWhat 走到这里时必然未命中，这里是给 AddClue 那条路省开销）。
+                int known = DeviceOf(playerId, time, roomId);
+                if (known != 0)
+                {
+                    return known;
+                }
+
+                var cache = Managers.Device != null ? Managers.Device.Cache : null;
+                if (cache == null || cache.Count == 0)
+                {
+                    return 0;
+                }
+
+                foreach (var pair in cache)
+                {
+                    int deviceId = pair.Key;
+                    if (deviceId == 0)
+                    {
+                        continue;
+                    }
+
+                    var clues = Server.Game.ClueMirror.Get(deviceId);
+                    if (clues == null || clues.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    for (int i = 0; i < clues.Count; i++)
+                    {
+                        var info = clues[i];
+                        if (info != null && info.PlayerId == playerId &&
+                            info.Time == time && info.RoomId == roomId)
+                        {
+                            Remember(playerId, time, roomId, deviceId);
+                            return deviceId;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Exception(ex, "线索镜像反查失败");
+            }
+
+            return 0;
         }
 
         /// <summary>该设备在设备表里的详细活动类型；取不到或为 WNone 时返回 WNone。</summary>
