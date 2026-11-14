@@ -122,7 +122,6 @@ namespace ClueDetail.Features.Host.ClueMerge
                         }
                     }
 
-                    PropositionInfo stamped = null;
 
                     if (exist == null)
                     {
@@ -133,8 +132,12 @@ namespace ClueDetail.Features.Host.ClueMerge
                             RoomId = device.RoomID,
                         };
                         list.Add(fresh);
+
+                        // ⚠️ 必须先打标、再 Clone 广播：客户端（以及 DT WebTablet 的线索面板）
+                        // 记录的是 S_ADD_CLUE 的副本，未打标就广播 ⇒ 身份/时间污染对实时线索不生效。
+                        global::ClueDetail.Features.Host.RecordDetail.RecordDetailFeature.RecordHook.StampWhat(device, player, state);
+                        global::ClueDetail.Features.Host.ShadowSabotage.ShadowSabotageFeature.StampOne(fresh, realOwner, timeOn, identityOn, frozen);
                         room.Broadcast(new S_ADD_CLUE { DeviceId = device.ID, Info = fresh.Clone() });
-                        stamped = fresh;
                     }
                     else
                     {
@@ -146,9 +149,12 @@ namespace ClueDetail.Features.Host.ClueMerge
                         list.RemoveAt(existIndex);
                         exist.Time = surviveTime;
                         list.Add(exist);
+
+                        // 同上：打标必须在广播之前（S_REMOVE_CLUE 的旧副本也按打标后的键发，客户端才删得掉）。
+                        global::ClueDetail.Features.Host.RecordDetail.RecordDetailFeature.RecordHook.StampWhat(device, player, state);
+                        global::ClueDetail.Features.Host.ShadowSabotage.ShadowSabotageFeature.StampOne(exist, realOwner, timeOn, identityOn, frozen);
                         room.Broadcast(new S_REMOVE_CLUE { DeviceId = device.ID, Info = old });
                         room.Broadcast(new S_ADD_CLUE { DeviceId = device.ID, Info = exist.Clone() });
-                        stamped = exist;
                     }
 
                     player.Session.Send(new S_LEFT_CLUE
@@ -156,14 +162,7 @@ namespace ClueDetail.Features.Host.ClueMerge
                         RoleFace = state == Define.EWhatState.Mastermind || state == Define.EWhatState.Black,
                     });
 
-                    // 接管后两个 Postfix 不会跑 —— 这里补上它们的职责（顺序与原版一致）。
-                    global::ClueDetail.Features.Host.RecordDetail.RecordDetailFeature.RecordHook.StampWhat(
-                        device, player, state);
-
-                    // ⚠️ 2026-10-20：直接用**对象引用**打标，不再调 StampPollution 按时间反查
-                    // （两次读 SurviveTime 之间跨秒边界会漏，实机症状就是"线索没有冻结时间"）。
-                    global::ClueDetail.Features.Host.ShadowSabotage.ShadowSabotageFeature.StampOne(
-                        stamped, player.PublicInfo.PlayerId, timeOn, identityOn, frozen);
+                    // 打标已在上面的「先打标、再广播」处完成（原来放在这里太晚，广播副本没有 101/103）。
 
                     // 未命中候选的诊断文本先算出来：内插字符串里再嵌 `? :` + 多个字符串字面量，
                     // 编译器会解析失败（CS1519），所以拆成局部变量。
