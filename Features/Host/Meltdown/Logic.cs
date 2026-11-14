@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Reflection;
 using Protocol;
+using GameChatFeature = ClueDetail.Features.Host.GameChat.GameChatFeature;
 using ServerDeviceManager = Server.Game.DeviceManager;
 using ServerGamePlayer = Server.Game.Player;
 using ServerGameRoom = Server.Game.GameRoom;
@@ -189,9 +191,23 @@ namespace ClueDetail.Features.Host.Meltdown
         }
 
         /// <summary>每秒检查一次：开局第 N 秒或出现「白转黑」时发秘密通道提示。</summary>
+        /// <summary>
+        /// 开局第 N 秒只给**黑幕**发一份；出现「白转黑」时给**刚转黑的玩家**发一份。
+        /// 都走秘密浮泡（SecretChat + 魔数 DeviceId，与捉迷藏 ChatOut 同款），
+        /// 客户端 UI_SecretChatOverlay 直接弹泡；只在 Survive 阶段有效。
+        /// </summary>
         internal static void TickNotice(ServerGameRoom room)
         {
-            if (!IsActive() || !MeltdownState.PauseThisRound || MeltdownState.NoticeSent)
+            if (!IsActive())
+            {
+                return;
+            }
+
+            // 白转黑检测必须每 tick 调用（用于更新颜色快照），与是否发送无关。
+            List<ServerGamePlayer> newcomers = DetectWhiteToBlack(room);
+
+            bool noticeEnabled = MeltdownFeature.NoticeEnabled == null || MeltdownFeature.NoticeEnabled.Value;
+            if (!MeltdownState.PauseThisRound || !noticeEnabled)
             {
                 return;
             }
@@ -202,54 +218,37 @@ namespace ClueDetail.Features.Host.Meltdown
                 return;
             }
 
-            int noticeSecond = MeltdownFeature.NoticeSecond == null ? 5 : MeltdownFeature.NoticeSecond.Value;
-            bool byTime = noticeSecond > 0
-                && MeltdownState.RoundStartSecond >= 0
-                && time.SurviveTime - MeltdownState.RoundStartSecond >= noticeSecond;
-            bool byColor = DetectWhiteToBlack(room);
-            if (byTime || byColor)
+            // 开局：只发黑幕，本局一次。
+            if (!MeltdownState.NoticeSent && MeltdownState.RoundStartSecond >= 0)
             {
-                SendNotice(room);
-            }
-        }
-
-        private static bool DetectWhiteToBlack(ServerGameRoom room)
-        {
-            bool found = false;
-            foreach (ServerGamePlayer player in room.Players)
-            {
-                if (player == null || player.PublicInfo == null)
+                int noticeSecond = MeltdownFeature.NoticeSecond == null ? 5 : MeltdownFeature.NoticeSecond.Value;
+                if (noticeSecond > 0 && time.SurviveTime - MeltdownState.RoundStartSecond >= noticeSecond)
                 {
-                    continue;
-                }
-
-                int id = player.PublicInfo.PlayerId;
-                EPlayerColor color = player.Color;
-                EPlayerColor previous;
-                if (MeltdownState.LastColors.TryGetValue(id, out previous))
-                {
-                    if (previous == EPlayerColor.White
-                        && (color == EPlayerColor.Black || color == EPlayerColor.Dark))
+                    MeltdownState.NoticeSent = true;
+                    string text = BuildNoticeText();
+                    foreach (ServerGamePlayer player in room.Players)
                     {
-                        found = true;
+                        if (player != null && player.Color == EPlayerColor.Dark)
+                        {
+                            SendSecret(player, text);
+                        }
                     }
                 }
-
-                MeltdownState.LastColors[id] = color;
             }
 
-            return found;
+            // 白转黑：给刚转黑的玩家（Black 或 Dark）各发一份。
+            if (newcomers.Count > 0)
+            {
+                string text = BuildNoticeText();
+                foreach (ServerGamePlayer player in newcomers)
+                {
+                    SendSecret(player, text);
+                }
+            }
         }
 
-        private static void SendNotice(ServerGameRoom room)
+        private static string BuildNoticeText()
         {
-            MeltdownState.NoticeSent = true;
-
-            if (MeltdownFeature.NoticeEnabled != null && !MeltdownFeature.NoticeEnabled.Value)
-            {
-                return;
-            }
-
             float ratio = MeltdownFeature.RatioThreshold == null
                 ? 0.3f
                 : MeltdownFeature.RatioThreshold.Value;
@@ -261,36 +260,67 @@ namespace ClueDetail.Features.Host.Meltdown
                 template = "【断电融毁】近期融毁胜利比例大于{ratio}%，本局断电时倒计时流逝将会暂停。";
             }
 
-            string text = template.Replace(
+            return template.Replace(
                 "{ratio}", ((int)Math.Round(ratio * 100f)).ToString());
+        }
 
+        /// <summary>颜色快照：返回本 tick 里 White → Black/Dark 的玩家。</summary>
+        private static List<ServerGamePlayer> DetectWhiteToBlack(ServerGameRoom room)
+        {
+            var result = new List<ServerGamePlayer>();
             foreach (ServerGamePlayer player in room.Players)
             {
-                if (player == null || player.Session == null)
+                if (player == null || player.PublicInfo == null)
                 {
                     continue;
                 }
 
-                // 只告知黑（杀手）与黑幕：Dark = 黑幕，Black = 黑（见 AGENTS §4.9）。
-                if (player.Color != EPlayerColor.Black && player.Color != EPlayerColor.Dark)
+                int id = player.PublicInfo.PlayerId;
+                EPlayerColor color = player.Color;
+                EPlayerColor previous;
+                if (MeltdownState.LastColors.TryGetValue(id, out previous)
+                    && previous == EPlayerColor.White
+                    && (color == EPlayerColor.Black || color == EPlayerColor.Dark))
                 {
-                    continue;
+                    result.Add(player);
                 }
 
-                try
+                MeltdownState.LastColors[id] = color;
+            }
+
+            return result;
+        }
+
+        /// <summary>魔数 DeviceId：避开真实发信机，客户端按秘密浮泡处理（同 HideAndSeek ChatOut）。</summary>
+        private const int SecretDeviceId = 999999;
+
+        private static void SendSecret(ServerGamePlayer player, string text)
+        {
+            if (player == null || player.Session == null)
+            {
+                return;
+            }
+
+            try
+            {
+                int time = (int)(ServerTimeManager.Instance?.SurviveTime ?? 0f);
+                player.Session.Send(new S_CHAT_MESSAGE
                 {
-                    player.Session.Send(new S_CHAT_MESSAGE
-                    {
-                        Type = EChatType.SecretChat,
-                        Text = text,
-                        PlayerId = 0,
-                    });
-                }
-                catch (Exception ex)
-                {
-                    global::ClueDetail.Core.Log.Warn(
-                        "断电融毁：秘密通道提示发送失败（" + ex.Message + "）。");
-                }
+                    Type = EChatType.SecretChat,
+                    DeviceId = SecretDeviceId,
+                    Text = text,
+                    PlayerId = player.PublicInfo.PlayerId,
+                    Time = time,
+                    IsDead = false,
+                });
+                global::ClueDetail.Core.Log.Info(
+                    "断电融毁：秘密浮泡已发给 player=" + player.PublicInfo.PlayerId
+                    + "（color=" + player.Color + "）。");
+            }
+            catch (Exception ex)
+            {
+                global::ClueDetail.Core.Log.Warn(
+                    "断电融毁：秘密浮泡发送失败（" + ex.Message + "）。");
             }
         }
 

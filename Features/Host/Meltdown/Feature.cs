@@ -112,7 +112,7 @@ namespace ClueDetail.Features.Host.Meltdown
                 "NoticeSecond",
                 5,
                 new ConfigDescription(
-                    "开局第几秒通过秘密通道告知黑方「本局断电时倒计时流逝将会暂停」。0 = 不主动告知。",
+                    "开局第几秒给**黑幕**发秘密浮泡（内容见 NoticeText）。0 = 不开局主动发（白转黑仍会发）。",
                     new AcceptableValueRange<int>(0, 60)));
 
             HideAndSeekMode = config.Bind(
@@ -130,7 +130,7 @@ namespace ClueDetail.Features.Host.Meltdown
                 section,
                 "NoticeEnabled",
                 true,
-                "是否发送「本局断电时倒计时流逝将会暂停」的开局 / 白转黑提示。");
+                "是否发送秘密浮泡提示：开局给黑幕一份，白转黑时给刚转黑的玩家一份。");
 
             NoticeText = config.Bind(
                 section,
