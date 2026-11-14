@@ -7,15 +7,13 @@ namespace ClueDetail.Core
     /// 「详细活动」的唯一解析入口。
     /// </summary>
     /// <remarks>
-    /// 来源按可靠性递减：
+    /// 三级来源，可靠性递减：
     /// <list type="number">
     /// <item><b>服务端精确下发</b> —— 房主装了本模块时走这条（<see cref="UnknownFields"/>，字段号 100）。</item>
     /// <item><b>设备关联</b> —— 两条路都精确到设备：① <c>S_ADD_CLUE</c> 自带 <c>DeviceId</c>
     /// （经 <c>Server.Game.ClueMirror.Add</c> 记下）；② <c>S_SCAN_DEVICE</c> 不带设备号，
     /// 但那是本机刚发起的扫描，靠请求/响应配对得到。</item>
-    /// <item><b>线索镜像反查</b> —— 自采集漏记时，直接去游戏自己的
-    /// <c>Server.Game.ClueMirror</c>（<c>S_ADD_CLUE</c> 的 DeviceId 落点）里按三元组找回设备。</item>
-    /// <item><b>按房间推断</b> —— 房主没装时的最后一级：用线索的房间去设备表里找该房间有什么活动。
+    /// <item><b>按房间推断</b> —— 房主没装时的主力：用线索的房间去设备表里找该房间有什么活动。
     /// 去重后只剩一种 → 确定；两种以上 → <c>ambiguous</c>，调用方退化为通用文案。</item>
     /// </list>
     /// </remarks>
@@ -115,19 +113,6 @@ namespace ClueDetail.Core
                 return false;
             }
 
-            // ⓪.前的特例：线索伪造的发信机痕迹。
-            // 它是**角色线索**（黑 → 66613 / 黑幕 → 11037），但带字段 100 = WChat，
-            // 目的是让句子里那段 `{what}` 显示「留下了消息」而不是原版角色文案
-            //（「销毁了证据 / 切断了电力」）。这是唯一允许角色线索走活动替换的入口，
-            // 其余角色线索仍由 ⓪ / ⓪.1 保持原版（见 `docs/线索伪造.md` §5）。
-            int traceWhat = UnknownFields.GetWhat(clue.Info);
-            if (traceWhat == (int)EWhatType.WChat && Define.IsRoleClueId(playerId))
-            {
-                what = EWhatType.WChat;
-                Diagnostics.TraceClue(roomId, playerId, time, traceWhat, false, "角色线索·发信机痕迹");
-                return true;
-            }
-
             // ⓪ 「销毁证据」线索**必须保持原版**（2026-10-18 实机反馈「黑那行显示成点燃了蜡烛」查出）。
             // 判据用游戏自己的口径：Define.IsDestroyEvidenceClue(:95774) = PlayerId ∈ {11038, 66613}
             // （11038 = MASTERMIND_DESTROY_ID、66613 = 黑），它们由 Device.DestroyEvidence（:166482）造出来，
@@ -191,24 +176,6 @@ namespace ClueDetail.Core
                 what = byDevice;
                 Diagnostics.TraceClue(roomId, playerId, time, (int)byDevice, false, "设备关联");
                 return true;
-            }
-
-            // ②.5 反查游戏自己的线索镜像（Server.Game.ClueMirror）。
-            // 为什么要这一条：S_ADD_CLUE 自带 DeviceId，客户端 Handle_S_ADD_CLUE（0.1.21 :43621-43627）
-            // 会把它记进 ClueMirror.Add（:180795）—— 那张表由游戏维护，**不随我们自采集的清理失效**。
-            // 自采集（②）只在"扫描响应 / 广播当时"记录，一旦漏记或被换局清理掉就查不到；
-            // 这里在渲染时补一次反查，把漏掉的广播线索捞回来。
-            // 房主本机不走镜像（:43623 的 IsHost 守卫），这里自然 miss，不影响房主侧。
-            int mirrored = ActivityMap.FindInMirror(playerId, time, roomId);
-            if (mirrored != 0)
-            {
-                EWhatType byMirror = ActivityMap.WhatOfDevice(mirrored);
-                if (byMirror != EWhatType.WNone)
-                {
-                    what = byMirror;
-                    Diagnostics.TraceClue(roomId, playerId, time, (int)byMirror, false, "线索镜像反查");
-                    return true;
-                }
             }
 
             // ③ / ④ 客户端自采集
