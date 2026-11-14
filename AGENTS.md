@@ -54,6 +54,12 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
   换机器用 `-p:GameDir=...`。
 - 不用 NuGet：沙箱内 HTTPS 到 nuget.org 不可用。
 
+### 2.1 提交纪律
+
+每批功能必须：`dotnet build`（0 警告）→ `verify.ps1`（PASS）→ **`git commit`** → `deploy.ps1`。
+禁止把多轮改动堆在工作树里：构建通过 ≠ 仓库里有；部署成功 ≠ 已提交。
+部署后核对本地与 `BepInEx\plugins\ClueDetail.dll` 的 SHA256 一致，并提醒用户重启生效。
+
 ## 3. 代码组织
 
 - 命名空间与目录一致。
@@ -471,7 +477,7 @@ pwsh -File deploy.ps1                # 拷贝成功 ≠ 生效，必须重启游
     - **`RoomDeviceScan` 收窄**：候选优先取本局实际设备实例（`Managers.Device.Cache`），静态表只作兜底。
     - 结构上限备案：`S_ADD_MY_CLUES` 协议里没有设备号，房主没装时"从未实时广播过的线索"只能按房间猜（F10）。
 27. **断电融毁倒计时**（2026-11-14，待实机）：`Features/Host/Meltdown/`，段 `[ClueMeltdown]`，**默认启用**。
-    断电（2 台电闸）期间按 `SpeedMultiplier` 调整剩余时间流逝；最近 `RecentRounds` 局融毁胜利比例
+    断电（2 台电闸，锁存到全部电闸恢复才解除）期间按 `SpeedMultiplier`（非停钟）/ `PauseMultiplier`（停钟状态）调整流逝；最近 `RecentRounds` 局融毁胜利比例
     **严格大于** `RatioThreshold`（默认 30%）时本局断电停钟，并在开局第 5 秒 / 白转黑后经秘密通道告知黑方。
     捉迷藏模式（`[HS_Mode] Enabled`）启用时失效，`HideAndSeekMode` 可三态调整；提示走 `NoticeEnabled` / `NoticeText`。机制与边界见 `docs/断电融毁.md`。
 ### 搁置（等用户决策，2026-10-20）

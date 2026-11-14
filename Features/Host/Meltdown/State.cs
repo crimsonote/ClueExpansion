@@ -18,6 +18,9 @@ namespace ClueDetail.Features.Host.Meltdown
         /// <summary>本局断电期间是否停钟。</summary>
         internal static bool PauseThisRound;
 
+        /// <summary>断电锁存：2 台拉断后置位，直到**所有**电闸恢复（count == 0）才解除。</summary>
+        internal static bool BlackoutLatched;
+
         /// <summary>本局是否已发过秘密通道提示。</summary>
         internal static bool NoticeSent;
 
@@ -142,6 +145,7 @@ namespace ClueDetail.Features.Host.Meltdown
                 && MeltdownFeature.PauseWhenOverRatio.Value
                 && Ratio() > (MeltdownFeature.RatioThreshold == null ? 0.3f : MeltdownFeature.RatioThreshold.Value);
             PauseThisRound = pause;
+            BlackoutLatched = false;
             NoticeSent = false;
             MeltRecorded = false;
             RoundStartSecond = -1;
@@ -151,6 +155,7 @@ namespace ClueDetail.Features.Host.Meltdown
         internal static void Reset()
         {
             PauseThisRound = false;
+            BlackoutLatched = false;
             NoticeSent = false;
             MeltRecorded = false;
             RoundStartSecond = -1;

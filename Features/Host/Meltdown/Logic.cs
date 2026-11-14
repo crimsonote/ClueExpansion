@@ -111,23 +111,38 @@ namespace ClueDetail.Features.Host.Meltdown
             return true;
         }
 
-        /// <summary>当前断电期间的流逝倍率。</summary>
+        /// <summary>当前断电期间的流逝倍率：停钟状态用 <c>PauseMultiplier</c>，否则用 <c>SpeedMultiplier</c>。</summary>
         internal static float Multiplier()
         {
-            if (MeltdownState.PauseThisRound)
-            {
-                return 0f;
-            }
-
-            float value = MeltdownFeature.SpeedMultiplier == null ? 1f : MeltdownFeature.SpeedMultiplier.Value;
+            float value = MeltdownState.PauseThisRound
+                ? (MeltdownFeature.PauseMultiplier == null ? 0f : MeltdownFeature.PauseMultiplier.Value)
+                : (MeltdownFeature.SpeedMultiplier == null ? 1f : MeltdownFeature.SpeedMultiplier.Value);
             return value < 0f ? 0f : value;
         }
 
-        /// <summary>是否处于断电状态（2 台电闸被拉断，与 <c>ClearFuseboxSabotage</c> 同口径）。</summary>
+        /// <summary>
+        /// 是否处于断电状态。**锁存**：2 台拉断后置位；必须**所有**电闸恢复（count == 0）
+        /// 才解除 —— 修好一台（count == 1）仍然算断电，继续按融毁倍率流逝。
+        /// </summary>
         internal static bool IsBlackout()
         {
             ServerDeviceManager manager = ServerDeviceManager.Instance;
-            return manager != null && manager.GetDisconnectFuseCount() >= 2;
+            if (manager == null)
+            {
+                return false;
+            }
+
+            int count = manager.GetDisconnectFuseCount();
+            if (count >= 2)
+            {
+                MeltdownState.BlackoutLatched = true;
+            }
+            else if (count == 0)
+            {
+                MeltdownState.BlackoutLatched = false;
+            }
+
+            return MeltdownState.BlackoutLatched;
         }
 
         /// <summary>

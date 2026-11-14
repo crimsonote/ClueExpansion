@@ -30,8 +30,11 @@ namespace ClueDetail.Features.Host.Meltdown
         side: FeatureSide.Host)]
     internal partial class MeltdownFeature
     {
-        /// <summary>断电后剩余时间的流逝倍率。1 = 原版；0 = 停钟。</summary>
+        /// <summary>断电后剩余时间的流逝倍率（比例未超阈值时）。1 = 原版；0 = 停钟。</summary>
         public static ConfigEntry<float> SpeedMultiplier { get; private set; }
+
+        /// <summary>比例超阈值时的流逝倍率；0 = 完全停钟。</summary>
+        public static ConfigEntry<float> PauseMultiplier { get; private set; }
 
         /// <summary>近期融毁胜利比例超阈值时，本局断电停钟。</summary>
         public static ConfigEntry<bool> PauseWhenOverRatio { get; private set; }
@@ -67,6 +70,18 @@ namespace ClueDetail.Features.Host.Meltdown
                     "· 0.5 = 每秒扣 0.5 秒（更慢）；\n" +
                     "· 0 = 停钟。\n" +
                     "只在断电（2 台电闸被拉断）期间生效；恢复供电后恢复正常。",
+                    new AcceptableValueRange<float>(0f, 5f)));
+
+            PauseMultiplier = config.Bind(
+                section,
+                "PauseMultiplier",
+                0f,
+                new ConfigDescription(
+                    "最近 N 局融毁比例超阈值（本局「停钟状态」）时，断电期间剩余时间的流逝倍率：\n" +
+                    "· 0 = 完全停钟（默认）；\n" +
+                    "· 0.2 = 大幅度降低（每秒扣 0.2 秒）；\n" +
+                    "· 1 = 与原版一致。\n" +
+                    "解除停钟需要**所有**电闸恢复供电（不是修好一台就恢复）。",
                     new AcceptableValueRange<float>(0f, 5f)));
 
             PauseWhenOverRatio = config.Bind(
