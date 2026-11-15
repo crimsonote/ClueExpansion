@@ -8,7 +8,11 @@ namespace ClueDetail.Features.Both.ClueGuard
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 三个开关互相独立，默认全关（关掉 = 完全原版行为）：
+    /// ⚠️ 本段是**无奈之举的补丁修复**：找不到原版这部分代码到底哪里出了问题，
+    /// 只能在整批下发 / 客户端列表 / 渲染三处做二次兜底。
+    /// </para>
+    /// <para>
+    /// 三个开关互相独立，默认全开（关掉对应项 = 恢复该项的原版行为）：
     /// </para>
     /// <list type="number">
     /// <item><b>FilterHostBatch</b>：房主侧，调查开始整批下发（<c>S_ADD_MY_CLUES</c>）时剔除
@@ -21,8 +25,8 @@ namespace ClueDetail.Features.Both.ClueGuard
     /// </remarks>
     [PatchFeature(
         "ClueGuard",
-        "实验性：销毁与身份污染的二次过滤（服务端整批 / 客户端列表 / 客户端身份复查，各自独立开关，默认全关）。",
-        defaultEnabled: false,
+        "实验性：销毁与身份污染的二次过滤。⚠️ 无奈之举的补丁修复——找不到原版这部分代码是哪里出了问题，只能在整批 / 列表 / 渲染三处二次兜底（默认全开，可逐项关闭）。",
+        defaultEnabled: true,
         side: FeatureSide.Both)]
     internal partial class ClueGuardFeature
     {
@@ -40,23 +44,26 @@ namespace ClueDetail.Features.Both.ClueGuard
             FilterHostBatch = config.Bind(
                 section,
                 "FilterHostBatch",
-                false,
+                true,
                 "房主侧：调查开始整批下发（S_ADD_MY_CLUES）时剔除 Destroyed 的线索。\n" +
+                "⚠️ 无奈之举的补丁修复（找不到原版这部分代码的问题点）。\n" +
                 "⚠️ 这是服务端行为改动：未装本模块的客户端也会收到过滤后的整批。");
 
             FilterClientList = config.Bind(
                 section,
                 "FilterClientList",
-                false,
+                true,
                 "客户端侧：线索进入平板列表前拒收 Destroyed 的线索。\n" +
+                "⚠️ 无奈之举的补丁修复（找不到原版这部分代码的问题点）。\n" +
                 "只影响装了本模块的客户端；服务端下发内容不变。");
 
             RecheckPollution = config.Bind(
                 section,
                 "RecheckPollution",
-                false,
+                true,
                 "客户端侧：线索带时间/身份污染标记（未知字段 101）且记录者不是本机时，\n" +
                 "把渲染句子里的人名二次抹成「某人」。\n" +
+                "⚠️ 无奈之举的补丁修复（找不到原版这部分代码的问题点）。\n" +
                 "用于兜底「服务端出站改写漏掉」的情况；当事人（本机记录的线索）不受影响。");
         }
     }
