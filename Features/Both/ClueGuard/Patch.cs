@@ -72,55 +72,5 @@ namespace ClueDetail.Features.Both.ClueGuard
                 return false;
             }
         }
-
-        /// <summary>
-        /// 客户端侧：污染标记（字段 101）存在、且当事人不是本机时，把句子里的名字二次抹成「某人」。
-        /// </summary>
-        /// <remarks>
-        /// 判定：<c>UnknownFields.GetDisplayTime(info) != 0</c> 表示这条线索记录于时间/身份破坏期间；
-        /// 当事人 = 线索所属的收件人（本机平板列表里的 <c>OwnerId</c> 就是本机），
-        /// 所以 <c>PlayerId == MyPlayerID</c> 时不抹（当事人在自己列表里本就该看实名）。
-        /// 这是兜底：服务端出站改写（<c>RewriteOutflow</c>）已按收件人处理过一次。
-        /// </remarks>
-        [HarmonyPatch(typeof(Util), nameof(Util.FormatProposition))]
-        internal static class PollutionRecheckHook
-        {
-            private static void Postfix(ClueManager.Clue clue, ref string __result)
-            {
-                if (!FeatureLoader.Enabled<ClueGuardFeature>()) return;
-                if (RecheckPollution == null || !RecheckPollution.Value) return;
-                if (clue == null || clue.Info == null || string.IsNullOrEmpty(__result)) return;
-
-                if (UnknownFields.GetDisplayTime(clue.Info) == 0)
-                {
-                    return;
-                }
-
-                int playerId = clue.Info.PlayerId;
-                if (playerId == 0 || Define.IsRoleClueId(playerId))
-                {
-                    return;
-                }
-
-                if (Managers.Player == null || playerId == Managers.Player.MyPlayerID)
-                {
-                    return;
-                }
-
-                Player owner = Managers.Player.GetPlayerCache(playerId);
-                if (owner == null || string.IsNullOrEmpty(owner.DisplayName))
-                {
-                    return;
-                }
-
-                string someone = Managers.GetText("WhoSomeone");
-                if (string.IsNullOrEmpty(someone))
-                {
-                    return;
-                }
-
-                __result = __result.Replace(owner.DisplayName, someone);
-            }
-        }
     }
 }
